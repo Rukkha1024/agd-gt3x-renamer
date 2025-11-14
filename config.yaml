@@ -22,6 +22,7 @@ columns:
   subject_info:
     division: "구분"
     management_number: "관리번호"
+    id: "ID"
     name: "이름"
 
 # 처리 대상 파일 확장자

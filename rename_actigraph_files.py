@@ -4,7 +4,7 @@ ActiGraph 파일 자동 이름 변경 스크립트
 
 파일명 형식:
   기존: 고유번호 (날짜).확장자
-  변경: 고유번호_이름 (날짜).확장자
+  변경: ID_이름 (날짜).확장자
 
 사용 예시:
   python rename_actigraph_files.py --week "40주차" --dry-run
@@ -77,10 +77,15 @@ class ActiGraphRenamer:
         
         return int(result.iloc[0][col_mgmt])
     
-    def get_subject_name(self, management_number: int, division: str) -> Optional[str]:
-        """관리번호와 구분으로 대상자 이름 조회"""
+    def get_subject_info(self, management_number: int, division: str) -> Optional[Tuple[str, str]]:
+        """관리번호와 구분으로 대상자 ID와 이름 조회
+        
+        Returns:
+            (ID, 이름) 튜플 또는 None
+        """
         col_mgmt = self.config['columns']['subject_info']['management_number']
         col_div = self.config['columns']['subject_info']['division']
+        col_id = self.config['columns']['subject_info']['id']
         col_name = self.config['columns']['subject_info']['name']
         
         result = self.subject_info_df[
@@ -94,19 +99,20 @@ class ActiGraphRenamer:
         if len(result) > 1:
             print(f"  ⚠️  경고: 관리번호 {management_number}, 구분 {division}에 {len(result)}개의 매칭 발견")
         
-        return str(result.iloc[0][col_name])
+        subject_id = str(result.iloc[0][col_id])
+        subject_name = str(result.iloc[0][col_name])
+        return (subject_id, subject_name)
     
-    def generate_new_filename(self, old_filename: str, name: str) -> str:
+    def generate_new_filename(self, old_filename: str, subject_id: str, name: str) -> str:
         """새 파일명 생성
         
-        예: "MOS2D36155148 (2025-11-13).gt3x" + "김선옥" 
-            -> "MOS2D36155148_김선옥 (2025-11-13).gt3x"
+        예: "MOS2D36155148 (2025-11-13).gt3x" + "JB54017302" + "김선옥" 
+            -> "JB54017302_김선옥 (2025-11-13).gt3x"
         """
-        match = re.match(r'^([A-Z0-9]+)(\s*\(.+)$', old_filename)
+        match = re.match(r'^[A-Z0-9]+(\s*\(.+)$', old_filename)
         if match:
-            serial = match.group(1)
-            rest = match.group(2)
-            return f"{serial}_{name}{rest}"
+            rest = match.group(1)
+            return f"{subject_id}_{name}{rest}"
         return old_filename
     
     def process_file(self, filepath: Path, division: str, dry_run: bool = False) -> Tuple[bool, str]:
@@ -131,13 +137,15 @@ class ActiGraphRenamer:
         if management_number is None:
             return False, f"관리번호 찾을 수 없음 (고유번호: {serial_number})"
         
-        # 이름 조회
-        name = self.get_subject_name(management_number, division)
-        if name is None:
-            return False, f"이름 찾을 수 없음 (관리번호: {management_number}, 구분: {division})"
+        # ID와 이름 조회
+        subject_info = self.get_subject_info(management_number, division)
+        if subject_info is None:
+            return False, f"대상자 정보 찾을 수 없음 (관리번호: {management_number}, 구분: {division})"
+        
+        subject_id, name = subject_info
         
         # 새 파일명 생성
-        new_filename = self.generate_new_filename(filename, name)
+        new_filename = self.generate_new_filename(filename, subject_id, name)
         new_filepath = filepath.parent / new_filename
         
         # 파일 변경
