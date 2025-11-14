@@ -6,7 +6,7 @@ paths:
   subject_info: "/mnt/c/Users/ding0/대학원생_김종철/OneDrive - 청주대학교/질병관리청/대상자 키,체중,주손 정보.xlsx"
   
   # 관리번호-시리얼번호 매칭 Excel 파일
-  serial_mapping: "/mnt/c/Users/ding0/OneDrive/문서/vscode repository/관리번호-시리얼번호.xlsx"
+  serial_mapping: "/mnt/c/Users/ding0/OneDrive/문서/vscode repository/가속도계 파일 바꾸기/관리번호-시리얼번호.xlsx"
   
   # ActiGraph 파일이 저장된 디렉토리
   target_directory: "/mnt/c/Users/ding0/OneDrive/문서/ActiGraph/ActiLife/Downloads"

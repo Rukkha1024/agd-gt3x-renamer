@@ -8,14 +8,14 @@ Always follow this procedure when performing tasks:
 
 ---
 ## Environment rules
-- Use the existing conda env: `cuda` (WSL2).
-- Always run Python/pip as: `conda run -n cuda python` / `conda run -n cuda pip`.
+- Use the existing conda env: `module` (WSL2).
+- Always run Python/pip as: `conda run -n module python` / `conda run -n module pip`.
 - **Do not** create or activate any `venv` or `.venv` or run `uv venv`.
 - If a package is missing, prefer:
-  1) `mamba/conda install -n cuda <pkg>` (if available)
-  2) otherwise `conda run -n cuda pip install <pkg>`
+  1) `mamba/conda install -n module <pkg>` (if available)
+  2) otherwise `conda run -n module pip install <pkg>`
 - Before running Python, verify the interpreter path with:
-  `conda run -n cuda python -c "import sys; print(sys.executable)"`
+  `conda run -n module python -c "import sys; print(sys.executable)"`
 
 --
 ## Code Rules 
