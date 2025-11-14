@@ -69,17 +69,21 @@ ID_이름 (날짜).확장자
 
 **사용 예시:**
 ```bash
-python name.py -- 40주차 --year 2025
+python name.py --week 40주차
+python name.py --week 40주차 --year 2025
+python name.py --week 40주차 --dry-run
 ```
 
 ---
 
-## 📋 Python 스크립트 요구사항
+## 📋 Python 스크립트 (name.py)
 
 ### 기능
 1. CLI 옵션:
-   - `--week` 또는 `--division`: 구분 값 (예: "40주차")
+   - `--week`: 구분 값 (필수, 예: "40주차")
+   - `--year`: 연도 (선택, 기본값: config.yaml의 defaults.year)
    - `--dry-run`: 실제 변경 없이 미리보기
+   - `--config`: 설정 파일 경로 (선택, 기본값: config.yaml)
 
 2. 처리 대상 파일:
    - `.gt3x` 파일
@@ -93,6 +97,10 @@ python name.py -- 40주차 --year 2025
 4. 재사용성:
    - config.yaml로 경로 및 설정 관리
    - 단일 스크립트로 구현
+
+### 실행 환경
+- Conda 환경: `module`
+- 필요 패키지: pyyaml, pandas, openpyxl
 
 ---
 
@@ -114,9 +122,36 @@ ID: JB54017302
 
 ---
 
-## 📝 다음 단계
+## 📝 프로젝트 진행 상황
 
+### 완료된 작업
 1. [x] config.yaml 파일 생성
 2. [x] Python 스크립트 작성 (name.py)
-3. [x] dry-run 모드로 테스트
-4. [x] 실제 파일 변경 실행
+3. [x] 스크립트 파일명 변경 (rename_actigraph_files.py → name.py)
+4. [x] CLI 옵션 단순화 (--week 옵션만 사용)
+5. [x] dry-run 모드로 테스트
+6. [x] 실제 파일 변경 실행 및 검증
+
+### 최종 실행 결과 (2025-11-14)
+```
+실행 명령어: conda run -n module python name.py --week 40주차
+
+📊 처리 결과
+✅ 성공: 2개
+  - MOS2D36155148 (2025-11-13).gt3x → JB54017302_김선옥 (2025-11-13).gt3x
+  - MOS2D36155148 (2025-11-13)60sec.agd → JB54017302_김선옥 (2025-11-13)60sec.agd
+⏭️  건너뜀: 8개 (이미 변경된 파일)
+❌ 실패: 0개
+```
+
+### 사용법
+```bash
+# 기본 사용 (2025년 기본값)
+conda run -n module python name.py --week 40주차
+
+# 미리보기 모드
+conda run -n module python name.py --week 40주차 --dry-run
+
+# 특정 연도 지정
+conda run -n module python name.py --week 1주차 --year 2024
+```
