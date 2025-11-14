@@ -7,8 +7,9 @@ ActiGraph 파일 자동 이름 변경 스크립트
   변경: ID_이름 (날짜).확장자
 
 사용 예시:
-  python rename_actigraph_files.py --week "40주차" --dry-run
-  python rename_actigraph_files.py --week "40주차" --year 2025
+  python name.py -- 40주차
+  python name.py -- 40주차 --year 2025
+  python name.py -- 40주차 --dry-run
 """
 
 import argparse
@@ -227,14 +228,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 사용 예시:
-  # Dry-run 모드로 미리보기
-  python rename_actigraph_files.py --week "40주차" --dry-run
+  # 기본 사용법
+  python name.py -- 40주차
   
-  # 실제 파일 변경 (2025년)
-  python rename_actigraph_files.py --week "40주차" --year 2025
+  # Dry-run 모드로 미리보기
+  python name.py -- 40주차 --dry-run
+  
+  # 연도 지정
+  python name.py -- 40주차 --year 2025
   
   # 다른 주차 처리
-  python rename_actigraph_files.py --week "1주차" --year 2024
+  python name.py -- 1주차 --year 2024
         """
     )
     
