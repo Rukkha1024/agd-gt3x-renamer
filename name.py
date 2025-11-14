@@ -243,7 +243,7 @@ def main():
     )
     
     parser.add_argument(
-        '--week', '--division',
+        '--week',
         required=True,
         help='구분 값 (예: "40주차", "1주차")'
     )
