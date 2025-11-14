@@ -6,10 +6,11 @@ ActiGraph 파일 자동 이름 변경 스크립트
   기존: 고유번호 (날짜).확장자
   변경: ID_이름 (날짜).확장자
 
-사용 예시:
-  python name.py -- 40주차
-  python name.py -- 40주차 --year 2025
-  python name.py -- 40주차 --dry-run
+기본 사용 (2025년 기본값)
+conda run -n module python name.py --week 40주차
+
+미리보기 모드
+conda run -n module python name.py --week 40주차 --dry
 """
 
 import argparse
@@ -232,7 +233,7 @@ def main():
   python name.py -- 40주차
   
   # Dry-run 모드로 미리보기
-  python name.py -- 40주차 --dry-run
+  python name.py -- 40주차 --dry
   
   # 연도 지정
   python name.py -- 40주차 --year 2025
@@ -255,7 +256,7 @@ def main():
     )
     
     parser.add_argument(
-        '--dry-run',
+        '--dry',
         action='store_true',
         help='실제 변경 없이 미리보기만 수행'
     )
