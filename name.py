@@ -275,7 +275,7 @@ def main():
         renamer.run(
             division=args.week,
             year=args.year,
-            dry_run=args.dry_run
+            dry_run=args.dry
         )
     except FileNotFoundError as e:
         print(f"❌ 오류: 파일을 찾을 수 없습니다: {e}")
