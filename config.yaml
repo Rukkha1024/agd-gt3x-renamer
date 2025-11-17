@@ -24,6 +24,7 @@ columns:
     management_number: "관리번호"
     id: "ID"
     name: "이름"
+    wear_start_date: "착용 시작일"
 
 # 처리 대상 파일 확장자
 file_extensions:

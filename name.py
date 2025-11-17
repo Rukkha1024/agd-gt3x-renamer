@@ -57,13 +57,15 @@ class ActiGraphRenamer:
             return match.group(1)
         return None
     
-    def is_already_renamed(self, filename: str) -> bool:
-        """이미 이름이 변경된 파일인지 확인
+    def extract_info_from_renamed_file(self, filename: str) -> Optional[Tuple[str, str, str]]:
+        """이미 변경된 파일명에서 ID, 이름, 날짜 추출
         
-        파일명에 '_'와 한글이 포함되어 있으면 이미 변경된 것으로 판단
+        예: "JB54017302_김선옥 (2025-11-08).gt3x" -> ("JB54017302", "김선옥", "2025-11-08")
         """
-        korean_pattern = re.compile(r'[가-힣]')
-        return '_' in filename and korean_pattern.search(filename) is not None
+        match = re.match(r'^([A-Z0-9]+)_([가-힣]+)\s*\((\d{4}-\d{2}-\d{2})\)', filename)
+        if match:
+            return (match.group(1), match.group(2), match.group(3))
+        return None
     
     def get_management_number(self, serial_number: str) -> Optional[int]:
         """고유번호로 관리번호 조회"""
@@ -79,16 +81,17 @@ class ActiGraphRenamer:
         
         return int(result.iloc[0][col_mgmt])
     
-    def get_subject_info(self, management_number: int, division: str) -> Optional[Tuple[str, str]]:
-        """관리번호와 구분으로 대상자 ID와 이름 조회
+    def get_subject_info(self, management_number: int, division: str) -> Optional[Tuple[str, str, str]]:
+        """관리번호와 구분으로 대상자 ID, 이름, 착용시작일 조회
         
         Returns:
-            (ID, 이름) 튜플 또는 None
+            (ID, 이름, 착용시작일) 튜플 또는 None
         """
         col_mgmt = self.config['columns']['subject_info']['management_number']
         col_div = self.config['columns']['subject_info']['division']
         col_id = self.config['columns']['subject_info']['id']
         col_name = self.config['columns']['subject_info']['name']
+        col_wear_date = self.config['columns']['subject_info']['wear_start_date']
         
         result = self.subject_info_df[
             (self.subject_info_df[col_mgmt] == management_number) &
@@ -103,18 +106,37 @@ class ActiGraphRenamer:
         
         subject_id = str(result.iloc[0][col_id])
         subject_name = str(result.iloc[0][col_name])
-        return (subject_id, subject_name)
+        wear_start_date = result.iloc[0][col_wear_date]
+        
+        # 날짜 형식 변환
+        try:
+            wear_date_str = pd.to_datetime(wear_start_date).strftime('%Y-%m-%d')
+        except Exception as e:
+            print(f"  ⚠️  경고: 착용 시작일 변환 실패 ({wear_start_date}): {e}")
+            return None
+        
+        return (subject_id, subject_name, wear_date_str)
     
-    def generate_new_filename(self, old_filename: str, subject_id: str, name: str) -> str:
+    def generate_new_filename(self, old_filename: str, subject_id: str, name: str, wear_date: str) -> str:
         """새 파일명 생성
         
-        예: "MOS2D36155148 (2025-11-13).gt3x" + "JB54017302" + "김선옥" 
-            -> "JB54017302_김선옥 (2025-11-13).gt3x"
+        예: "MOS2D36155148 (2025-11-13).gt3x" + "JB54017302" + "김선옥" + "2025-11-08"
+            -> "JB54017302_김선옥 (2025-11-08).gt3x"
+        예: "JB54017302_김선옥 (2025-11-13)60sec.agd" + "JB54017302" + "김선옥" + "2025-11-08"
+            -> "JB54017302_김선옥 (2025-11-08)60sec.agd"
         """
-        match = re.match(r'^[A-Z0-9]+(\s*\(.+)$', old_filename)
-        if match:
-            rest = match.group(1)
-            return f"{subject_id}_{name}{rest}"
+        # 원본 형식: 고유번호 (날짜).확장자
+        match1 = re.match(r'^[A-Z0-9]+\s*\([^)]+\)(.*)$', old_filename)
+        if match1:
+            suffix = match1.group(1)
+            return f"{subject_id}_{name} ({wear_date}){suffix}"
+        
+        # 이미 변경된 형식: ID_이름 (날짜).확장자
+        match2 = re.match(r'^[A-Z0-9]+_[가-힣]+\s*\([^)]+\)(.*)$', old_filename)
+        if match2:
+            suffix = match2.group(1)
+            return f"{subject_id}_{name} ({wear_date}){suffix}"
+        
         return old_filename
     
     def process_file(self, filepath: Path, division: str, dry_run: bool = False) -> Tuple[bool, str]:
@@ -125,29 +147,55 @@ class ActiGraphRenamer:
         """
         filename = filepath.name
         
-        # 이미 변경된 파일은 건너뛰기
-        if self.is_already_renamed(filename):
-            return False, "이미 변경됨"
+        # 이미 변경된 파일인지 확인
+        renamed_info = self.extract_info_from_renamed_file(filename)
         
-        # 고유번호 추출
-        serial_number = self.extract_serial_from_filename(filename)
-        if not serial_number:
-            return False, "고유번호 추출 실패"
+        # 고유번호 추출 (원본 파일 또는 변경된 파일)
+        if renamed_info:
+            # 이미 변경된 파일 - ID로 관리번호 역추적
+            existing_id, existing_name, existing_date = renamed_info
+            
+            # ID로 관리번호 찾기 (역조회)
+            col_id = self.config['columns']['subject_info']['id']
+            col_mgmt = self.config['columns']['subject_info']['management_number']
+            col_div = self.config['columns']['subject_info']['division']
+            
+            result = self.subject_info_df[
+                (self.subject_info_df[col_id] == existing_id) &
+                (self.subject_info_df[col_div] == division)
+            ]
+            
+            if len(result) == 0:
+                return False, f"ID {existing_id}에 대한 정보를 찾을 수 없음"
+            
+            management_number = int(result.iloc[0][col_mgmt])
+        else:
+            # 원본 파일 - 고유번호에서 관리번호 찾기
+            serial_number = self.extract_serial_from_filename(filename)
+            if not serial_number:
+                return False, "고유번호 추출 실패"
+            
+            # 관리번호 조회
+            management_number = self.get_management_number(serial_number)
+            if management_number is None:
+                return False, f"관리번호 찾을 수 없음 (고유번호: {serial_number})"
         
-        # 관리번호 조회
-        management_number = self.get_management_number(serial_number)
-        if management_number is None:
-            return False, f"관리번호 찾을 수 없음 (고유번호: {serial_number})"
-        
-        # ID와 이름 조회
+        # ID, 이름, 착용시작일 조회
         subject_info = self.get_subject_info(management_number, division)
         if subject_info is None:
             return False, f"대상자 정보 찾을 수 없음 (관리번호: {management_number}, 구분: {division})"
         
-        subject_id, name = subject_info
+        subject_id, name, wear_date = subject_info
         
         # 새 파일명 생성
-        new_filename = self.generate_new_filename(filename, subject_id, name)
+        new_filename = self.generate_new_filename(filename, subject_id, name, wear_date)
+        
+        # 이미 올바른 파일명인 경우 건너뛰기
+        if renamed_info:
+            existing_id, existing_name, existing_date = renamed_info
+            if existing_id == subject_id and existing_name == name and existing_date == wear_date:
+                return False, "이미 올바르게 변경됨"
+        
         new_filepath = filepath.parent / new_filename
         
         # 파일 변경
