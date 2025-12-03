@@ -7,7 +7,8 @@ do progress number 1.
 </request>
 
 <rule>
-현 codebase rule을 준수해라>
+- 현 codebase rule을 준수해라. 
+- 파이썬 코드를 만든다면, @name.py을 포함해서, 3개 이하로 만들어라. 
 </rule>
 
 <working progress>
@@ -18,7 +19,15 @@ do progress number 1.
 5. <original> 파일에 대해서 만들어둔 파이썬 script로 <file rename>과 meta information까지 수정. 
 </working progress>
 
-
+<기타 참고 사항>
+오른손잡이: 
+ - 엑셀: 주손 == '오' 
+ - .agd, .gt3x: side == 'Left' & Dominance =="Dominant"
+	
+왼손잡이: 
+ - 엑셀: 주손 == '왼'
+ - .agd, .gt3x: side == 'Right' & Dominance =="Non-Dominant"
+</기타 참고 사항>
 
 
 <file rename>
