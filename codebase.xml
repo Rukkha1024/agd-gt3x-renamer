@@ -1,0 +1,1334 @@
+<directory>agd-gt3x-renamer</directory>
+
+<source-tree>
+agd-gt3x-renamer
+├── __pycache__
+│   ├── modify.cpython-311.pyc
+│   └── name.cpython-311.pyc
+├── config.yaml
+├── modify.py
+├── name.py
+├── requirements.txt
+└── temp_test
+    ├── DB51016001_김홍선 (2025-01-15)60sec.agd
+    └── DB51016001_김홍선 (2025-01-15)60sec.gt3x
+
+</source-tree>
+
+<files>
+<file path="config.yaml">
+```yaml
+# ActiGraph 파일 자동 변경 설정
+
+# 파일 경로
+paths:
+  # 대상자 정보 Excel 파일
+  subject_info: "/mnt/c/Users/Alice/OneDrive - 청주대학교/VScode_Repository/agd-gt3x-renamer/Archive/대상자 키,체중,주손 정보.xlsx"
+
+  # 관리번호-시리얼번호 매칭 Excel 파일
+  serial_mapping: "/mnt/c/Users/Alice/OneDrive - 청주대학교/VScode_Repository/agd-gt3x-renamer/관리번호-시리얼번호.xlsx"
+
+  # ActiGraph 파일이 저장된 디렉토리
+  target_directory: "/mnt/c/Users/Alice/OneDrive - 청주대학교/VScode_Repository/agd-gt3x-renamer/temp_test"
+
+# Excel 컬럼 설정
+columns:
+  # 관리번호-시리얼번호.xlsx
+  serial_mapping:
+    management_number: "관리번호"
+    serial_number: "고유번호"
+  
+  # 대상자 키,체중,주손 정보.xlsx
+  subject_info:
+    division: "구분"
+    management_number: "관리번호"
+    id: "ID"
+    name: "이름"
+    wear_start_date: "착용 시작일"
+    # 메타데이터 추가 컬럼 (Progress 04)
+    sex: "성별"
+    age: "나이"
+    height: "키"
+    mass: "체중"
+    date_of_birth: "생년월일"
+    handedness: "주손"
+
+# 처리 대상 파일 확장자
+file_extensions:
+  - ".gt3x"
+  - ".agd"
+
+# 기본 설정
+defaults:
+  year: 2025
+
+# 메타데이터 수정 설정
+metadata:
+  # .agd 파일 필드명 (SQLite settings 테이블)
+  agd_fields:
+    subjectname: "subjectname"
+    sex: "sex"
+    height: "height"
+    mass: "mass"
+    age: "age"
+    dateOfBirth: "dateOfBirth"
+    side: "side"
+    dominance: "dominance"
+    limb: "limb"
+
+  # .gt3x 파일 필드명 (info.txt)
+  gt3x_fields:
+    subjectname: "Subject Name"
+    sex: "Sex"
+    height: "Height"
+    mass: "Mass"
+    age: "Age"
+    dateOfBirth: "DateOfBirth"
+    side: "Side"
+    dominance: "Dominance"
+    limb: "Limb"
+
+  # 성별 매핑
+  sex_mapping:
+    "남": "Male"
+    "여": "Female"
+
+  # 손잡이 매핑 (주손의 반대편 손목에 착용)
+  handedness_mapping:
+    "오":  # 오른손잡이 → 왼쪽 손목 착용
+      side: "Left"
+      dominance: "Dominant"
+    "왼":  # 왼손잡이 → 오른쪽 손목 착용
+      side: "Right"
+      dominance: "Non-Dominant"
+
+  # 기본값
+  defaults:
+    limb: "Waist"
+
+```
+</file>
+<file path="modify.py">
+```py
+#!/usr/bin/env python3
+"""
+ActiGraph 파일 메타데이터 수정 스크립트
+
+.agd 파일 (SQLite)과 .gt3x 파일 (ZIP)의 메타데이터를 수정합니다.
+
+사용 예시:
+    # 테스트 모드 (Progress 02 검증용)
+    conda run -n module python modify.py --test
+
+    # 프로그래밍 방식 사용 (Progress 04에서 사용)
+    from modify import ActiGraphModifier
+    modifier = ActiGraphModifier()
+    modifier.modify_agd_file(path, metadata)
+"""
+
+import argparse
+import datetime
+import os
+import shutil
+import sqlite3
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+
+import yaml
+
+
+class ActiGraphModifier:
+    """ActiGraph 파일 (.agd, .gt3x) 메타데이터 수정 클래스"""
+
+    def __init__(self, config_path: str = "config.yaml"):
+        """설정 파일을 로드하고 초기화
+
+        Args:
+            config_path: config.yaml 파일 경로
+        """
+        with open(config_path, 'r', encoding='utf-8') as f:
+            self.config = yaml.safe_load(f)
+
+    def datetime_to_ticks(self, dt: datetime.datetime) -> int:
+        """datetime을 Windows DateTime.Ticks로 변환
+
+        Args:
+            dt: 변환할 datetime 객체
+
+        Returns:
+            int: Ticks 값 (100ns 단위, 0001-01-01 기준)
+
+        Example:
+            >>> datetime.datetime(1999, 11, 1) -> 630770112000000000
+        """
+        base = datetime.datetime(1, 1, 1)
+        delta = dt - base
+        return int(delta.total_seconds() * 10_000_000)
+
+    def ticks_to_datetime(self, ticks: int) -> datetime.datetime:
+        """Windows DateTime.Ticks를 datetime으로 변환
+
+        Args:
+            ticks: Ticks 값
+
+        Returns:
+            datetime: 변환된 datetime 객체
+
+        Example:
+            >>> 630770112000000000 -> datetime.datetime(1999, 11, 1)
+        """
+        base = datetime.datetime(1, 1, 1)
+        return base + datetime.timedelta(microseconds=int(ticks) / 10)
+
+    def map_handedness(self, hand: str) -> Tuple[str, str]:
+        """손잡이 정보를 side/dominance로 매핑
+
+        ActiGraph는 주손의 반대편 손목에 착용합니다.
+
+        Args:
+            hand: "오" (오른손잡이) 또는 "왼" (왼손잡이)
+
+        Returns:
+            tuple: (side, dominance)
+
+        Example:
+            >>> "오" -> ("Left", "Dominant")  # 오른손잡이는 왼쪽 손목
+            >>> "왼" -> ("Right", "Non-Dominant")  # 왼손잡이는 오른쪽 손목
+        """
+        mapping = self.config['metadata']['handedness_mapping']
+        if hand not in mapping:
+            raise ValueError(f"Unknown handedness: {hand}. Expected '오' or '왼'")
+
+        return (mapping[hand]['side'], mapping[hand]['dominance'])
+
+    def _create_backup(self, file_path: str) -> str:
+        """파일 백업 생성
+
+        Args:
+            file_path: 백업할 파일 경로
+
+        Returns:
+            str: 백업 파일 경로
+        """
+        backup_path = f"{file_path}.bak"
+        shutil.copy2(file_path, backup_path)
+        return backup_path
+
+    def _restore_backup(self, original_path: str, backup_path: str):
+        """백업에서 복원
+
+        Args:
+            original_path: 원본 파일 경로
+            backup_path: 백업 파일 경로
+        """
+        if os.path.exists(backup_path):
+            shutil.copy2(backup_path, original_path)
+            os.remove(backup_path)
+
+    def modify_agd_file(self, file_path: str, metadata: Dict) -> bool:
+        """.agd 파일 (SQLite) 메타데이터 수정
+
+        Args:
+            file_path: .agd 파일 경로
+            metadata: 수정할 메타데이터
+                - subjectname: str (이름)
+                - sex: str ("Male" or "Female")
+                - height: int (cm)
+                - mass: int (kg)
+                - age: int
+                - dateOfBirth: datetime 또는 int (Ticks)
+                - hand: str ("오" or "왼") - side/dominance로 자동 변환
+                - limb: str (Optional, default "Waist")
+
+        Returns:
+            bool: 성공 여부
+        """
+        backup_path = None
+        try:
+            # 백업 생성
+            backup_path = self._create_backup(file_path)
+
+            # SQLite 연결
+            conn = sqlite3.connect(file_path)
+            cursor = conn.cursor()
+
+            # 필드 매핑
+            field_mapping = self.config['metadata']['agd_fields']
+
+            # 메타데이터 준비
+            updates = {}
+
+            # 기본 필드
+            if 'subjectname' in metadata:
+                updates[field_mapping['subjectname']] = str(metadata['subjectname'])
+
+            if 'sex' in metadata:
+                updates[field_mapping['sex']] = str(metadata['sex'])
+
+            if 'height' in metadata:
+                updates[field_mapping['height']] = str(metadata['height'])
+
+            if 'mass' in metadata:
+                updates[field_mapping['mass']] = str(metadata['mass'])
+
+            if 'age' in metadata:
+                updates[field_mapping['age']] = str(metadata['age'])
+
+            # dateOfBirth 변환
+            if 'dateOfBirth' in metadata:
+                dob = metadata['dateOfBirth']
+                if isinstance(dob, datetime.datetime):
+                    dob_ticks = self.datetime_to_ticks(dob)
+                else:
+                    dob_ticks = int(dob)
+                updates[field_mapping['dateOfBirth']] = str(dob_ticks)
+
+            # 손잡이 매핑
+            if 'hand' in metadata:
+                side, dominance = self.map_handedness(metadata['hand'])
+                updates[field_mapping['side']] = side
+                updates[field_mapping['dominance']] = dominance
+
+            # limb 기본값
+            if 'limb' in metadata:
+                updates[field_mapping['limb']] = str(metadata['limb'])
+            else:
+                default_limb = self.config['metadata']['defaults']['limb']
+                updates[field_mapping['limb']] = default_limb
+
+            # UPDATE 실행
+            for field_name, value in updates.items():
+                cursor.execute(
+                    "UPDATE settings SET settingValue=? WHERE settingName=?",
+                    (value, field_name)
+                )
+
+            conn.commit()
+            conn.close()
+
+            # 백업 삭제
+            if backup_path and os.path.exists(backup_path):
+                os.remove(backup_path)
+
+            return True
+
+        except Exception as e:
+            print(f"❌ Error modifying .agd file: {e}")
+            if backup_path:
+                self._restore_backup(file_path, backup_path)
+            return False
+
+    def _parse_info_txt(self, content: str) -> Dict[str, str]:
+        """info.txt 내용 파싱
+
+        Args:
+            content: info.txt 문자열
+
+        Returns:
+            dict: 키-값 딕셔너리
+        """
+        info_dict = {}
+        for line in content.strip().split('\n'):
+            if ':' in line:
+                key, value = line.split(':', 1)
+                info_dict[key.strip()] = value.strip()
+        return info_dict
+
+    def _update_info_txt(self, content: str, metadata: Dict) -> str:
+        """info.txt 내용 업데이트
+
+        기존 필드를 업데이트하고, 없는 필드는 적절한 위치에 추가합니다.
+
+        Args:
+            content: 원본 info.txt 문자열
+            metadata: 수정할 메타데이터
+
+        Returns:
+            str: 업데이트된 info.txt 문자열
+        """
+        lines = content.strip().split('\n')
+        field_mapping = self.config['metadata']['gt3x_fields']
+
+        # 업데이트할 값 준비
+        updates = {}
+
+        if 'subjectname' in metadata:
+            updates[field_mapping['subjectname']] = str(metadata['subjectname'])
+
+        if 'sex' in metadata:
+            updates[field_mapping['sex']] = str(metadata['sex'])
+
+        if 'height' in metadata:
+            updates[field_mapping['height']] = str(metadata['height'])
+
+        if 'mass' in metadata:
+            updates[field_mapping['mass']] = str(metadata['mass'])
+
+        if 'age' in metadata:
+            updates[field_mapping['age']] = str(metadata['age'])
+
+        if 'dateOfBirth' in metadata:
+            dob = metadata['dateOfBirth']
+            if isinstance(dob, datetime.datetime):
+                dob_ticks = self.datetime_to_ticks(dob)
+            else:
+                dob_ticks = int(dob)
+            updates[field_mapping['dateOfBirth']] = str(dob_ticks)
+
+        if 'hand' in metadata:
+            side, dominance = self.map_handedness(metadata['hand'])
+            updates[field_mapping['side']] = side
+            updates[field_mapping['dominance']] = dominance
+
+        if 'limb' in metadata:
+            updates[field_mapping['limb']] = str(metadata['limb'])
+        else:
+            default_limb = self.config['metadata']['defaults']['limb']
+            updates[field_mapping['limb']] = default_limb
+
+        # 현재 존재하는 필드 파악
+        existing_keys = set()
+        for line in lines:
+            if ':' in line:
+                key = line.split(':', 1)[0].strip()
+                existing_keys.add(key)
+
+        # 라인별로 업데이트 및 삽입
+        updated_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+
+            if ':' in line:
+                key = line.split(':', 1)[0].strip()
+
+                # 기존 필드 업데이트
+                if key in updates:
+                    updated_lines.append(f"{key}: {updates[key]}")
+                else:
+                    updated_lines.append(line)
+
+                # Sex, Height, Mass, Age는 "Acceleration Max" 다음에 삽입
+                if key == "Acceleration Max":
+                    for field_key in ['Sex', 'Height', 'Mass', 'Age']:
+                        if field_key not in existing_keys and field_key in updates:
+                            updated_lines.append(f"{field_key}: {updates[field_key]}")
+
+                # DateOfBirth는 "Dominance" 다음에 삽입
+                if key == "Dominance":
+                    if 'DateOfBirth' not in existing_keys and 'DateOfBirth' in updates:
+                        updated_lines.append(f"DateOfBirth: {updates['DateOfBirth']}")
+
+            else:
+                updated_lines.append(line)
+
+            i += 1
+
+        return '\n'.join(updated_lines) + '\n'
+
+    def modify_gt3x_file(self, file_path: str, metadata: Dict) -> bool:
+        """.gt3x 파일 (ZIP) 메타데이터 수정
+
+        info.txt만 수정하고 log.bin은 수정하지 않습니다.
+
+        Args:
+            file_path: .gt3x 파일 경로
+            metadata: 수정할 메타데이터 (modify_agd_file과 동일)
+
+        Returns:
+            bool: 성공 여부
+        """
+        backup_path = None
+        try:
+            # 백업 생성
+            backup_path = self._create_backup(file_path)
+
+            # 임시 디렉토리 생성
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+
+                # ZIP 압축 해제
+                with zipfile.ZipFile(file_path, 'r') as zf:
+                    zf.extractall(temp_path)
+
+                # info.txt 읽기 및 수정
+                info_txt_path = temp_path / 'info.txt'
+                if not info_txt_path.exists():
+                    raise FileNotFoundError("info.txt not found in .gt3x file")
+
+                with open(info_txt_path, 'r', encoding='utf-8') as f:
+                    original_content = f.read()
+
+                updated_content = self._update_info_txt(original_content, metadata)
+
+                with open(info_txt_path, 'w', encoding='utf-8') as f:
+                    f.write(updated_content)
+
+                # ZIP 재생성
+                with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for file in temp_path.rglob('*'):
+                        if file.is_file():
+                            arcname = file.relative_to(temp_path)
+                            zf.write(file, arcname)
+
+            # 백업 삭제
+            if backup_path and os.path.exists(backup_path):
+                os.remove(backup_path)
+
+            return True
+
+        except Exception as e:
+            print(f"❌ Error modifying .gt3x file: {e}")
+            if backup_path:
+                self._restore_backup(file_path, backup_path)
+            return False
+
+    def validate_agd_modification(self, file_path: str, expected: Dict) -> bool:
+        """.agd 파일 수정 검증
+
+        Args:
+            file_path: 검증할 .agd 파일 경로
+            expected: 예상되는 메타데이터 값
+
+        Returns:
+            bool: 모든 필드가 예상값과 일치하면 True
+        """
+        try:
+            conn = sqlite3.connect(file_path)
+            settings = dict(
+                conn.execute("SELECT settingName, settingValue FROM settings").fetchall()
+            )
+            conn.close()
+
+            field_mapping = self.config['metadata']['agd_fields']
+
+            for key, expected_value in expected.items():
+                field_name = field_mapping.get(key)
+                if field_name is None:
+                    continue
+
+                actual_value = settings.get(field_name, '')
+
+                # dateOfBirth는 Ticks로 변환하여 비교
+                if key == 'dateOfBirth':
+                    if isinstance(expected_value, datetime.datetime):
+                        expected_value = str(self.datetime_to_ticks(expected_value))
+                    else:
+                        expected_value = str(expected_value)
+                else:
+                    expected_value = str(expected_value)
+
+                if actual_value != expected_value:
+                    print(f"  ❌ Mismatch in {key}: expected '{expected_value}', got '{actual_value}'")
+                    return False
+
+            return True
+
+        except Exception as e:
+            print(f"❌ Error validating .agd file: {e}")
+            return False
+
+    def validate_gt3x_modification(self, file_path: str, expected: Dict) -> bool:
+        """.gt3x 파일 수정 검증
+
+        Args:
+            file_path: 검증할 .gt3x 파일 경로
+            expected: 예상되는 메타데이터 값
+
+        Returns:
+            bool: 모든 필드가 예상값과 일치하면 True
+        """
+        try:
+            with zipfile.ZipFile(file_path, 'r') as zf:
+                info_content = zf.read('info.txt').decode('utf-8')
+
+            info_dict = self._parse_info_txt(info_content)
+            field_mapping = self.config['metadata']['gt3x_fields']
+
+            for key, expected_value in expected.items():
+                field_name = field_mapping.get(key)
+                if field_name is None:
+                    continue
+
+                actual_value = info_dict.get(field_name, '')
+
+                # dateOfBirth는 Ticks로 변환하여 비교
+                if key == 'dateOfBirth':
+                    if isinstance(expected_value, datetime.datetime):
+                        expected_value = str(self.datetime_to_ticks(expected_value))
+                    else:
+                        expected_value = str(expected_value)
+                else:
+                    expected_value = str(expected_value)
+
+                if actual_value != expected_value:
+                    print(f"  ❌ Mismatch in {key}: expected '{expected_value}', got '{actual_value}'")
+                    return False
+
+            return True
+
+        except Exception as e:
+            print(f"❌ Error validating .gt3x file: {e}")
+            return False
+
+
+def test_modifier():
+    """Progress 02 검증용 테스트 함수
+
+    조민석 대상자 데이터로 original 파일을 수정하여
+    modified 파일과 일치하는지 검증합니다.
+    """
+    print("="*80)
+    print("Progress 02: ActiGraph 파일 수정 테스트")
+    print("="*80)
+
+    # 초기화
+    modifier = ActiGraphModifier()
+
+    # 조민석 대상자 메타데이터
+    metadata = {
+        'subjectname': '조민석',
+        'sex': 'Male',
+        'height': 177,
+        'mass': 70,
+        'age': 26,
+        'dateOfBirth': datetime.datetime(1999, 11, 1),
+        'hand': '오',  # 오른손잡이
+        'limb': 'Waist'
+    }
+
+    print("\n📋 테스트 메타데이터:")
+    for key, value in metadata.items():
+        print(f"  {key}: {value}")
+
+    # 파일 경로
+    base_dir = Path("Archive")
+    original_agd = base_dir / "original_MOS2A50130052 (2025-12-02)60sec.agd"
+    original_gt3x = base_dir / "original_MOS2A50130052 (2025-12-02)60sec.gt3x"
+
+    # 테스트용 임시 파일 생성
+    temp_dir = Path("temp_test")
+    temp_dir.mkdir(exist_ok=True)
+
+    test_agd = temp_dir / "test.agd"
+    test_gt3x = temp_dir / "test.gt3x"
+
+    try:
+        # .agd 파일 테스트
+        print("\n" + "="*80)
+        print("테스트 1: .agd 파일 수정")
+        print("="*80)
+
+        shutil.copy2(original_agd, test_agd)
+        print(f"✓ 원본 파일 복사: {original_agd.name}")
+
+        success = modifier.modify_agd_file(str(test_agd), metadata)
+        if success:
+            print("✓ .agd 파일 수정 완료")
+        else:
+            print("❌ .agd 파일 수정 실패")
+            return
+
+        # 검증
+        expected = {
+            'subjectname': '조민석',
+            'sex': 'Male',
+            'height': 177,
+            'mass': 70,
+            'age': 26,
+            'dateOfBirth': datetime.datetime(1999, 11, 1),
+            'side': 'Left',
+            'dominance': 'Dominant',
+            'limb': 'Waist'
+        }
+
+        print("\n검증 중...")
+        if modifier.validate_agd_modification(str(test_agd), expected):
+            print("✅ .agd 파일 검증 성공! 모든 필드가 일치합니다.")
+        else:
+            print("❌ .agd 파일 검증 실패")
+            return
+
+        # .gt3x 파일 테스트
+        print("\n" + "="*80)
+        print("테스트 2: .gt3x 파일 수정")
+        print("="*80)
+
+        shutil.copy2(original_gt3x, test_gt3x)
+        print(f"✓ 원본 파일 복사: {original_gt3x.name}")
+
+        success = modifier.modify_gt3x_file(str(test_gt3x), metadata)
+        if success:
+            print("✓ .gt3x 파일 수정 완료")
+        else:
+            print("❌ .gt3x 파일 수정 실패")
+            return
+
+        # 검증
+        print("\n검증 중...")
+        if modifier.validate_gt3x_modification(str(test_gt3x), expected):
+            print("✅ .gt3x 파일 검증 성공! 모든 필드가 일치합니다.")
+        else:
+            print("❌ .gt3x 파일 검증 실패")
+            return
+
+        # 단위 테스트
+        print("\n" + "="*80)
+        print("테스트 3: 단위 테스트")
+        print("="*80)
+
+        # Ticks 변환 테스트
+        dt = datetime.datetime(1999, 11, 1)
+        ticks = modifier.datetime_to_ticks(dt)
+        expected_ticks = 630770112000000000
+
+        print(f"\nTicks 변환 테스트:")
+        print(f"  입력: {dt}")
+        print(f"  출력: {ticks}")
+        print(f"  예상: {expected_ticks}")
+
+        if ticks == expected_ticks:
+            print("  ✅ Ticks 변환 정확")
+        else:
+            print("  ❌ Ticks 변환 오류")
+            return
+
+        # 역변환 테스트
+        dt_back = modifier.ticks_to_datetime(ticks)
+        print(f"\n역변환 테스트:")
+        print(f"  입력: {ticks}")
+        print(f"  출력: {dt_back}")
+
+        if dt_back == dt:
+            print("  ✅ 역변환 정확 (bidirectional)")
+        else:
+            print("  ❌ 역변환 오류")
+            return
+
+        # 손잡이 매핑 테스트
+        print(f"\n손잡이 매핑 테스트:")
+        side_r, dom_r = modifier.map_handedness('오')
+        print(f"  오른손잡이 ('오'): side={side_r}, dominance={dom_r}")
+
+        if side_r == 'Left' and dom_r == 'Dominant':
+            print("  ✅ 오른손잡이 매핑 정확")
+        else:
+            print("  ❌ 오른손잡이 매핑 오류")
+            return
+
+        side_l, dom_l = modifier.map_handedness('왼')
+        print(f"  왼손잡이 ('왼'): side={side_l}, dominance={dom_l}")
+
+        if side_l == 'Right' and dom_l == 'Non-Dominant':
+            print("  ✅ 왼손잡이 매핑 정확")
+        else:
+            print("  ❌ 왼손잡이 매핑 오류")
+            return
+
+        # 전체 성공
+        print("\n" + "="*80)
+        print("🎉 모든 테스트 통과!")
+        print("="*80)
+        print("\n✅ Progress 02 완료:")
+        print("  - .agd 파일 수정 및 검증 성공")
+        print("  - .gt3x 파일 수정 및 검증 성공")
+        print("  - 모든 단위 테스트 통과")
+        print("\n📁 테스트 파일 위치:")
+        print(f"  {test_agd}")
+        print(f"  {test_gt3x}")
+        print("\n다음: ActiLife에서 파일을 열어 수동 검증하세요.")
+
+    finally:
+        # 정리는 하지 않음 (수동 검증용)
+        pass
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="ActiGraph 파일 메타데이터 수정",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+
+    parser.add_argument(
+        '--test',
+        action='store_true',
+        help='Progress 02 검증 테스트 실행'
+    )
+
+    args = parser.parse_args()
+
+    if args.test:
+        test_modifier()
+    else:
+        print("사용법: python modify.py --test")
+        print("\nProgress 04에서는 프로그래밍 방식으로 import하여 사용합니다.")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
+
+```
+</file>
+<file path="name.py">
+```py
+#!/usr/bin/env python3
+"""
+ActiGraph 파일 자동 이름 변경 스크립트
+
+파일명 형식:
+  기존: 고유번호 (날짜).확장자
+  변경: ID_이름 (날짜).확장자
+
+기본 사용 (2025년 기본값)
+conda run -n module python name.py --week 40주차
+
+미리보기 모드
+conda run -n module python name.py --week 40주차 --dry
+"""
+
+import argparse
+import datetime
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+
+import pandas as pd
+import yaml
+
+from modify import ActiGraphModifier
+
+
+class ActiGraphRenamer:
+    def __init__(self, config_path: str = "config.yaml"):
+        """설정 파일을 로드하고 초기화"""
+        with open(config_path, 'r', encoding='utf-8') as f:
+            self.config = yaml.safe_load(f)
+        
+        self.serial_mapping_df = None
+        self.subject_info_df = None
+        
+    def load_data(self, year: int):
+        """Excel 파일에서 데이터 로드"""
+        print("📂 데이터 로드 중...")
+
+        # 관리번호-시리얼번호 매칭 데이터
+        serial_path = self.config['paths']['serial_mapping']
+        self.serial_mapping_df = pd.read_excel(serial_path)
+        print(f"  ✓ 관리번호-시리얼번호 매칭: {len(self.serial_mapping_df)} 건")
+
+        # 대상자 정보 데이터 (연도별 시트)
+        subject_path = self.config['paths']['subject_info']
+        self.subject_info_df = pd.read_excel(subject_path, sheet_name=str(year))
+
+        # 첫 번째 행 제거 (중복 헤더 행)
+        if len(self.subject_info_df) > 0 and pd.isna(self.subject_info_df.iloc[0]['관리번호']):
+            self.subject_info_df = self.subject_info_df.iloc[1:].reset_index(drop=True)
+
+        # 구분 컬럼 forward-fill (Excel의 병합된 셀 처리)
+        col_div = self.config['columns']['subject_info']['division']
+        self.subject_info_df[col_div] = self.subject_info_df[col_div].ffill()
+
+        print(f"  ✓ 대상자 정보 ({year}년): {len(self.subject_info_df)} 건")
+        
+    def extract_serial_from_filename(self, filename: str) -> Optional[str]:
+        """파일명에서 고유번호 추출
+        
+        예: "MOS2D36155148 (2025-11-13).gt3x" -> "MOS2D36155148"
+        """
+        match = re.match(r'^([A-Z0-9]+)\s*\(', filename)
+        if match:
+            return match.group(1)
+        return None
+    
+    def extract_info_from_renamed_file(self, filename: str) -> Optional[Tuple[str, str, str]]:
+        """이미 변경된 파일명에서 ID, 이름, 날짜 추출
+        
+        예: "JB54017302_김선옥 (2025-11-08).gt3x" -> ("JB54017302", "김선옥", "2025-11-08")
+        """
+        match = re.match(r'^([A-Z0-9]+)_([가-힣]+)\s*\((\d{4}-\d{2}-\d{2})\)', filename)
+        if match:
+            return (match.group(1), match.group(2), match.group(3))
+        return None
+    
+    def get_management_number(self, serial_number: str) -> Optional[int]:
+        """고유번호로 관리번호 조회"""
+        col_serial = self.config['columns']['serial_mapping']['serial_number']
+        col_mgmt = self.config['columns']['serial_mapping']['management_number']
+        
+        result = self.serial_mapping_df[
+            self.serial_mapping_df[col_serial] == serial_number
+        ]
+        
+        if len(result) == 0:
+            return None
+        
+        return int(result.iloc[0][col_mgmt])
+    
+    def get_subject_info(self, management_number: int, division: str) -> Optional[Tuple[str, str, str]]:
+        """관리번호와 구분으로 대상자 ID, 이름, 착용시작일 조회
+        
+        Returns:
+            (ID, 이름, 착용시작일) 튜플 또는 None
+        """
+        col_mgmt = self.config['columns']['subject_info']['management_number']
+        col_div = self.config['columns']['subject_info']['division']
+        col_id = self.config['columns']['subject_info']['id']
+        col_name = self.config['columns']['subject_info']['name']
+        col_wear_date = self.config['columns']['subject_info']['wear_start_date']
+        
+        result = self.subject_info_df[
+            (self.subject_info_df[col_mgmt] == management_number) &
+            (self.subject_info_df[col_div] == division)
+        ]
+        
+        if len(result) == 0:
+            return None
+        
+        if len(result) > 1:
+            print(f"  ⚠️  경고: 관리번호 {management_number}, 구분 {division}에 {len(result)}개의 매칭 발견")
+        
+        subject_id = str(result.iloc[0][col_id])
+        subject_name = str(result.iloc[0][col_name])
+        wear_start_date = result.iloc[0][col_wear_date]
+        
+        # 날짜 형식 변환
+        try:
+            wear_date_str = pd.to_datetime(wear_start_date).strftime('%Y-%m-%d')
+        except Exception as e:
+            print(f"  ⚠️  경고: 착용 시작일 변환 실패 ({wear_start_date}): {e}")
+            return None
+        
+        return (subject_id, subject_name, wear_date_str)
+
+    def parse_date_from_excel(self, date_value) -> Optional[datetime.datetime]:
+        """Excel 날짜 파싱 (MM-DD-YY 형식)
+
+        Args:
+            date_value: Excel 날짜 값 (pandas datetime 또는 문자열 "MM-DD-YY")
+
+        Returns:
+            datetime 객체 또는 None
+
+        Example:
+            "01-16-78" -> datetime(1978, 1, 16)
+            "02-22-03" -> datetime(2003, 2, 22)
+
+        Note:
+            YY < 50 -> 20YY (2000년대)
+            YY >= 50 -> 19YY (1900년대)
+        """
+        try:
+            # pandas Timestamp인 경우
+            if isinstance(date_value, pd.Timestamp):
+                return date_value.to_pydatetime()
+
+            # datetime인 경우
+            if isinstance(date_value, datetime.datetime):
+                return date_value
+
+            # 문자열인 경우 (MM-DD-YY)
+            date_str = str(date_value).strip()
+
+            # MM-DD-YY 형식 파싱
+            parts = date_str.split('-')
+            if len(parts) != 3:
+                print(f"  ⚠️  경고: 날짜 형식 오류 ({date_str}), MM-DD-YY 형식이어야 합니다")
+                return None
+
+            month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+
+            # 2자리 연도를 4자리로 변환
+            if year < 50:
+                year += 2000
+            else:
+                year += 1900
+
+            return datetime.datetime(year, month, day)
+
+        except Exception as e:
+            print(f"  ⚠️  경고: 날짜 파싱 실패 ({date_value}): {e}")
+            return None
+
+    def extract_metadata_from_subject_info(self, management_number: int, division: str) -> Optional[Dict]:
+        """Excel에서 메타데이터 추출
+
+        Args:
+            management_number: 관리번호
+            division: 구분 (예: "40주차")
+
+        Returns:
+            메타데이터 dict 또는 None
+            {
+                'subjectname': str,
+                'sex': str,  # "Male" or "Female"
+                'height': int,
+                'mass': int,
+                'age': int,
+                'dateOfBirth': datetime,
+                'hand': str,  # "오" or "왼"
+                'limb': str   # "Waist"
+            }
+        """
+        col_mgmt = self.config['columns']['subject_info']['management_number']
+        col_div = self.config['columns']['subject_info']['division']
+        col_name = self.config['columns']['subject_info']['name']
+        col_sex = self.config['columns']['subject_info']['sex']
+        col_age = self.config['columns']['subject_info']['age']
+        col_height = self.config['columns']['subject_info']['height']
+        col_mass = self.config['columns']['subject_info']['mass']
+        col_dob = self.config['columns']['subject_info']['date_of_birth']
+        col_hand = self.config['columns']['subject_info']['handedness']
+
+        # Excel에서 행 조회
+        result = self.subject_info_df[
+            (self.subject_info_df[col_mgmt] == management_number) &
+            (self.subject_info_df[col_div] == division)
+        ]
+
+        if len(result) == 0:
+            return None
+
+        row = result.iloc[0]
+
+        # 생년월일 파싱
+        dob = self.parse_date_from_excel(row[col_dob])
+        if dob is None:
+            print(f"  ⚠️  경고: 생년월일 파싱 실패 (관리번호: {management_number})")
+            return None
+
+        # 성별 매핑
+        sex_raw = str(row[col_sex]).strip()
+        sex_mapping = self.config['metadata']['sex_mapping']
+        sex = sex_mapping.get(sex_raw, sex_raw)
+
+        # 메타데이터 구성
+        metadata = {
+            'subjectname': str(row[col_name]),
+            'sex': sex,
+            'height': int(row[col_height]),
+            'mass': int(row[col_mass]),
+            'age': int(row[col_age]),
+            'dateOfBirth': dob,
+            'hand': str(row[col_hand]).strip(),
+            'limb': 'Waist'
+        }
+
+        return metadata
+
+    def generate_new_filename(self, old_filename: str, subject_id: str, name: str, wear_date: str) -> str:
+        """새 파일명 생성
+        
+        예: "MOS2D36155148 (2025-11-13).gt3x" + "JB54017302" + "김선옥" + "2025-11-08"
+            -> "JB54017302_김선옥 (2025-11-08).gt3x"
+        예: "JB54017302_김선옥 (2025-11-13)60sec.agd" + "JB54017302" + "김선옥" + "2025-11-08"
+            -> "JB54017302_김선옥 (2025-11-08)60sec.agd"
+        """
+        # 원본 형식: 고유번호 (날짜).확장자
+        match1 = re.match(r'^[A-Z0-9]+\s*\([^)]+\)(.*)$', old_filename)
+        if match1:
+            suffix = match1.group(1)
+            return f"{subject_id}_{name} ({wear_date}){suffix}"
+        
+        # 이미 변경된 형식: ID_이름 (날짜).확장자
+        match2 = re.match(r'^[A-Z0-9]+_[가-힣]+\s*\([^)]+\)(.*)$', old_filename)
+        if match2:
+            suffix = match2.group(1)
+            return f"{subject_id}_{name} ({wear_date}){suffix}"
+        
+        return old_filename
+    
+    def process_file(self, filepath: Path, division: str, dry_run: bool = False, modify_metadata: bool = True) -> Tuple[bool, str]:
+        """단일 파일 처리
+
+        Args:
+            filepath: 처리할 파일 경로
+            division: 구분 (예: "40주차")
+            dry_run: True이면 실제 변경 없이 미리보기만
+            modify_metadata: True이면 메타데이터도 수정, False이면 파일명만 변경
+
+        Returns:
+            (성공 여부, 메시지)
+        """
+        filename = filepath.name
+        
+        # 이미 변경된 파일인지 확인
+        renamed_info = self.extract_info_from_renamed_file(filename)
+        
+        # 고유번호 추출 (원본 파일 또는 변경된 파일)
+        if renamed_info:
+            # 이미 변경된 파일 - ID로 관리번호 역추적
+            existing_id, existing_name, existing_date = renamed_info
+            
+            # ID로 관리번호 찾기 (역조회)
+            col_id = self.config['columns']['subject_info']['id']
+            col_mgmt = self.config['columns']['subject_info']['management_number']
+            col_div = self.config['columns']['subject_info']['division']
+            
+            result = self.subject_info_df[
+                (self.subject_info_df[col_id] == existing_id) &
+                (self.subject_info_df[col_div] == division)
+            ]
+            
+            if len(result) == 0:
+                return False, f"ID {existing_id}에 대한 정보를 찾을 수 없음"
+            
+            management_number = int(result.iloc[0][col_mgmt])
+        else:
+            # 원본 파일 - 고유번호에서 관리번호 찾기
+            serial_number = self.extract_serial_from_filename(filename)
+            if not serial_number:
+                return False, "고유번호 추출 실패"
+            
+            # 관리번호 조회
+            management_number = self.get_management_number(serial_number)
+            if management_number is None:
+                return False, f"관리번호 찾을 수 없음 (고유번호: {serial_number})"
+        
+        # ID, 이름, 착용시작일 조회
+        subject_info = self.get_subject_info(management_number, division)
+        if subject_info is None:
+            return False, f"대상자 정보 찾을 수 없음 (관리번호: {management_number}, 구분: {division})"
+        
+        subject_id, name, wear_date = subject_info
+        
+        # 새 파일명 생성
+        new_filename = self.generate_new_filename(filename, subject_id, name, wear_date)
+        
+        # 이미 올바른 파일명인 경우 건너뛰기
+        if renamed_info:
+            existing_id, existing_name, existing_date = renamed_info
+            if existing_id == subject_id and existing_name == name and existing_date == wear_date:
+                return False, "이미 올바르게 변경됨"
+        
+        new_filepath = filepath.parent / new_filename
+
+        # 메타데이터 수정 (파일명 변경 전)
+        if modify_metadata and not dry_run:
+            # 메타데이터 추출
+            metadata = self.extract_metadata_from_subject_info(management_number, division)
+            if metadata is None:
+                return False, f"메타데이터 추출 실패 (관리번호: {management_number}, 구분: {division})"
+
+            try:
+                # ActiGraphModifier 초기화
+                modifier = ActiGraphModifier(self.config.get('config_path', 'config.yaml') if isinstance(self.config, dict) else 'config.yaml')
+
+                # .agd 또는 .gt3x 파일 메타데이터 수정
+                file_ext = filepath.suffix.lower()
+                if file_ext == '.agd':
+                    success = modifier.modify_agd_file(str(filepath), metadata)
+                    if not success:
+                        return False, f"메타데이터 수정 실패 (.agd): {filename}"
+                elif file_ext == '.gt3x':
+                    success = modifier.modify_gt3x_file(str(filepath), metadata)
+                    if not success:
+                        return False, f"메타데이터 수정 실패 (.gt3x): {filename}"
+
+                # 검증
+                expected = {
+                    'subjectname': metadata['subjectname'],
+                    'sex': metadata['sex'],
+                    'height': metadata['height'],
+                    'mass': metadata['mass'],
+                    'age': metadata['age'],
+                    'dateOfBirth': metadata['dateOfBirth'],
+                    'side': modifier.map_handedness(metadata['hand'])[0],
+                    'dominance': modifier.map_handedness(metadata['hand'])[1],
+                    'limb': metadata['limb']
+                }
+
+                if file_ext == '.agd':
+                    if not modifier.validate_agd_modification(str(filepath), expected):
+                        return False, f"메타데이터 검증 실패 (.agd): {filename}"
+                elif file_ext == '.gt3x':
+                    if not modifier.validate_gt3x_modification(str(filepath), expected):
+                        return False, f"메타데이터 검증 실패 (.gt3x): {filename}"
+
+            except Exception as e:
+                return False, f"메타데이터 수정 중 오류: {str(e)}"
+
+        # 파일 변경
+        if not dry_run:
+            try:
+                filepath.rename(new_filepath)
+                if modify_metadata:
+                    return True, f"변경 완료 (메타데이터 + 파일명): {filename} -> {new_filename}"
+                else:
+                    return True, f"변경 완료 (파일명만): {filename} -> {new_filename}"
+            except Exception as e:
+                return False, f"파일 변경 실패: {str(e)}"
+        else:
+            if modify_metadata:
+                return True, f"[DRY-RUN] 메타데이터 + 파일명: {filename} -> {new_filename}"
+            else:
+                return True, f"[DRY-RUN] 파일명만: {filename} -> {new_filename}"
+    
+    def run(self, division: str, year: int = None, dry_run: bool = False, modify_metadata: bool = True):
+        """전체 프로세스 실행
+
+        Args:
+            division: 구분 (예: "40주차")
+            year: 연도 (기본값: config.yaml의 defaults.year)
+            dry_run: True이면 실제 변경 없이 미리보기만
+            modify_metadata: True이면 메타데이터도 수정, False이면 파일명만 변경
+        """
+        if year is None:
+            year = self.config['defaults']['year']
+
+        print(f"\n{'='*60}")
+        print(f"ActiGraph 파일 자동 이름 변경")
+        print(f"{'='*60}")
+        print(f"📅 연도: {year}")
+        print(f"📌 구분: {division}")
+        print(f"🔍 모드: {'DRY-RUN (미리보기)' if dry_run else '실제 변경'}")
+        print(f"📝 메타데이터 수정: {'예' if modify_metadata else '아니오 (파일명만)'}")
+        print(f"{'='*60}\n")
+        
+        # 데이터 로드
+        self.load_data(year)
+        
+        # 대상 디렉토리
+        target_dir = Path(self.config['paths']['target_directory'])
+        if not target_dir.exists():
+            print(f"❌ 오류: 디렉토리를 찾을 수 없습니다: {target_dir}")
+            return
+        
+        # 처리 대상 파일 찾기
+        extensions = self.config['file_extensions']
+        files = []
+        for ext in extensions:
+            files.extend(target_dir.glob(f"*{ext}"))
+        
+        if not files:
+            print(f"❌ 처리할 파일이 없습니다. (확장자: {', '.join(extensions)})")
+            return
+        
+        print(f"📁 발견된 파일: {len(files)}개\n")
+        
+        # 파일 처리
+        success_count = 0
+        skip_count = 0
+        error_count = 0
+        
+        for filepath in sorted(files):
+            success, message = self.process_file(filepath, division, dry_run, modify_metadata)
+
+            if success:
+                print(f"✅ {message}")
+                success_count += 1
+            else:
+                if "이미 변경됨" in message:
+                    print(f"⏭️  {filepath.name}: {message}")
+                    skip_count += 1
+                else:
+                    print(f"❌ {filepath.name}: {message}")
+                    error_count += 1
+        
+        # 결과 요약
+        print(f"\n{'='*60}")
+        print(f"📊 처리 결과")
+        print(f"{'='*60}")
+        print(f"✅ 성공: {success_count}개")
+        print(f"⏭️  건너뜀: {skip_count}개")
+        print(f"❌ 실패: {error_count}개")
+        print(f"{'='*60}\n")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="ActiGraph 파일 자동 이름 변경",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+사용 예시:
+  # 기본 사용법
+  python name.py -- 40주차
+  
+  # Dry-run 모드로 미리보기
+  python name.py -- 40주차 --dry
+  
+  # 연도 지정
+  python name.py -- 40주차 --year 2025
+  
+  # 다른 주차 처리
+  python name.py -- 1주차 --year 2024
+        """
+    )
+    
+    parser.add_argument(
+        '--week',
+        required=True,
+        help='구분 값 (예: "40주차", "1주차")'
+    )
+    
+    parser.add_argument(
+        '--year',
+        type=int,
+        help='연도 (기본값: config.yaml의 defaults.year)'
+    )
+    
+    parser.add_argument(
+        '--dry',
+        action='store_true',
+        help='실제 변경 없이 미리보기만 수행'
+    )
+
+    parser.add_argument(
+        '--no-metadata',
+        action='store_true',
+        help='메타데이터 수정 없이 파일명만 변경 (기본: 메타데이터도 수정)'
+    )
+
+    parser.add_argument(
+        '--config',
+        default='config.yaml',
+        help='설정 파일 경로 (기본값: config.yaml)'
+    )
+    
+    args = parser.parse_args()
+    
+    # 실행
+    try:
+        renamer = ActiGraphRenamer(args.config)
+        renamer.run(
+            division=args.week,
+            year=args.year,
+            dry_run=args.dry,
+            modify_metadata=not args.no_metadata
+        )
+    except FileNotFoundError as e:
+        print(f"❌ 오류: 파일을 찾을 수 없습니다: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ 오류 발생: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
+
+```
+</file>
+<file path="requirements.txt">
+```txt
+# Requirements for agd-gt3x-renamer
+# Recommended minimal versions; adjust to your environment if needed
+pandas>=1.5.0
+PyYAML>=6.0
+openpyxl>=3.0.10
+
+# Optional (pandas pulls these in; included for clarity)
+numpy>=1.24
+python-dateutil>=2.8
+pytz>=2023.3
+
+```
+</file>
+</files>

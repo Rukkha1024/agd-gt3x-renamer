@@ -12,19 +12,19 @@ Progress 05 구현
 </rule>
 
 <working progress>
-1. ✅ meta information이 다른점을 찾기 between <modified> and <original> (Progress 01 완료)
-2. ✅ 다른점을 찾은 후, <original> 파일을 파이썬으로 수정해 <modified>와 동일하게 만들기 (Progress 02 완료)
-3. ✅ Excel 데이터를 통해 파일을 수정하는 방법에 대한 계획 작성 (Progress 03 완료)
+1. meta information이 다른점을 찾기 between <modified> and <original> 
+2. 다른점을 찾은 후, <original> 파일을 파이썬으로 수정해 <modified>와 동일하게 만들기 
+3. Excel 데이터를 통해 파일을 수정하는 방법에 대한 계획 작성 
    - Excel 데이터 매칭 전략 설계 완료
    - 메타데이터 변환 규칙 정의 완료
    - name.py + modify.py 통합 워크플로우 설계 완료
    - 상세 계획: progress/progress_03/progress_03.md
-4. ✅ 3의 계획을 파이썬코드로 작성 (Progress 04 완료)
+4. 3의 계획을 파이썬코드로 작성 
    - name.py에 메타데이터 추출 및 수정 기능 통합 완료
    - config.yaml에 메타데이터 컬럼 매핑 추가 완료
    - 테스트 성공: 메타데이터 + 파일명 일괄 변경 검증 완료
    - 상세 결과: progress/progress_04/progress_04.md
-5. ✅ <original> 파일에 대해서 만들어둔 파이썬 script로 <file rename>과 meta information까지 수정 (Progress 05 완료)
+5. <original> 파일에 대해서 만들어둔 파이썬 script로 <file rename>과 meta information까지 수정 
    - Original 파일 처리 성공: 파일명 변경 + 메타데이터 수정 완료
    - Excel 병합 셀 처리 버그 수정 (name.py)
    - 9개 메타데이터 필드 검증 성공 (.agd, .gt3x)
