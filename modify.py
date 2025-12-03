@@ -28,6 +28,43 @@ from typing import Dict, Optional, Tuple
 import yaml
 
 
+# ============================================================================
+# ActiGraph 파일 형식 상수 (변경 불필요 - ActiGraph 표준)
+# ============================================================================
+
+# 지원 파일 확장자
+FILE_EXTENSIONS = [".gt3x", ".agd"]
+
+# .agd 파일 필드명 (SQLite settings 테이블)
+AGD_FIELDS = {
+    "subjectname": "subjectname",
+    "sex": "sex",
+    "height": "height",
+    "mass": "mass",
+    "age": "age",
+    "dateOfBirth": "dateOfBirth",
+    "side": "side",
+    "dominance": "dominance",
+    "limb": "limb",
+}
+
+# .gt3x 파일 필드명 (info.txt)
+GT3X_FIELDS = {
+    "subjectname": "Subject Name",
+    "sex": "Sex",
+    "height": "Height",
+    "mass": "Mass",
+    "age": "Age",
+    "dateOfBirth": "DateOfBirth",
+    "side": "Side",
+    "dominance": "Dominance",
+    "limb": "Limb",
+}
+
+# 기본값
+DEFAULT_LIMB = "Waist"
+
+
 class ActiGraphModifier:
     """ActiGraph 파일 (.agd, .gt3x) 메타데이터 수정 클래스"""
 
@@ -143,8 +180,8 @@ class ActiGraphModifier:
             conn = sqlite3.connect(file_path)
             cursor = conn.cursor()
 
-            # 필드 매핑
-            field_mapping = self.config['metadata']['agd_fields']
+            # 필드 매핑 (상수 사용)
+            field_mapping = AGD_FIELDS
 
             # 메타데이터 준비
             updates = {}
@@ -184,8 +221,7 @@ class ActiGraphModifier:
             if 'limb' in metadata:
                 updates[field_mapping['limb']] = str(metadata['limb'])
             else:
-                default_limb = self.config['metadata']['defaults']['limb']
-                updates[field_mapping['limb']] = default_limb
+                updates[field_mapping['limb']] = DEFAULT_LIMB
 
             # UPDATE 실행
             for field_name, value in updates.items():
@@ -238,7 +274,7 @@ class ActiGraphModifier:
             str: 업데이트된 info.txt 문자열
         """
         lines = content.strip().split('\n')
-        field_mapping = self.config['metadata']['gt3x_fields']
+        field_mapping = GT3X_FIELDS
 
         # 업데이트할 값 준비
         updates = {}
@@ -274,8 +310,7 @@ class ActiGraphModifier:
         if 'limb' in metadata:
             updates[field_mapping['limb']] = str(metadata['limb'])
         else:
-            default_limb = self.config['metadata']['defaults']['limb']
-            updates[field_mapping['limb']] = default_limb
+            updates[field_mapping['limb']] = DEFAULT_LIMB
 
         # 현재 존재하는 필드 파악
         existing_keys = set()
@@ -391,7 +426,7 @@ class ActiGraphModifier:
             )
             conn.close()
 
-            field_mapping = self.config['metadata']['agd_fields']
+            field_mapping = AGD_FIELDS
 
             for key, expected_value in expected.items():
                 field_name = field_mapping.get(key)
@@ -434,7 +469,7 @@ class ActiGraphModifier:
                 info_content = zf.read('info.txt').decode('utf-8')
 
             info_dict = self._parse_info_txt(info_content)
-            field_mapping = self.config['metadata']['gt3x_fields']
+            field_mapping = GT3X_FIELDS
 
             for key, expected_value in expected.items():
                 field_name = field_mapping.get(key)

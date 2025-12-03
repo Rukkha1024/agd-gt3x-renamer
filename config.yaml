@@ -33,42 +33,13 @@ columns:
     date_of_birth: "생년월일"
     handedness: "주손"
 
-# 처리 대상 파일 확장자
-file_extensions:
-  - ".gt3x"
-  - ".agd"
-
 # 기본 설정
 defaults:
   year: 2025
 
-# 메타데이터 수정 설정
+# 메타데이터 매핑 설정 (사용자 정의 가능)
 metadata:
-  # .agd 파일 필드명 (SQLite settings 테이블)
-  agd_fields:
-    subjectname: "subjectname"
-    sex: "sex"
-    height: "height"
-    mass: "mass"
-    age: "age"
-    dateOfBirth: "dateOfBirth"
-    side: "side"
-    dominance: "dominance"
-    limb: "limb"
-
-  # .gt3x 파일 필드명 (info.txt)
-  gt3x_fields:
-    subjectname: "Subject Name"
-    sex: "Sex"
-    height: "Height"
-    mass: "Mass"
-    age: "Age"
-    dateOfBirth: "DateOfBirth"
-    side: "Side"
-    dominance: "Dominance"
-    limb: "Limb"
-
-  # 성별 매핑
+  # 성별 매핑 (Excel 값 → ActiGraph 값)
   sex_mapping:
     "남": "Male"
     "여": "Female"
@@ -81,7 +52,3 @@ metadata:
     "왼":  # 왼손잡이 → 오른쪽 손목 착용
       side: "Right"
       dominance: "Non-Dominant"
-
-  # 기본값
-  defaults:
-    limb: "Waist"

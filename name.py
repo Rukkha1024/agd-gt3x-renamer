@@ -24,7 +24,7 @@ from typing import Dict, Optional, Tuple
 import pandas as pd
 import yaml
 
-from modify import ActiGraphModifier
+from modify import ActiGraphModifier, FILE_EXTENSIONS
 
 
 class ActiGraphRenamer:
@@ -422,14 +422,13 @@ class ActiGraphRenamer:
             print(f"❌ 오류: 디렉토리를 찾을 수 없습니다: {target_dir}")
             return
         
-        # 처리 대상 파일 찾기
-        extensions = self.config['file_extensions']
+        # 처리 대상 파일 찾기 (상수 사용)
         files = []
-        for ext in extensions:
+        for ext in FILE_EXTENSIONS:
             files.extend(target_dir.glob(f"*{ext}"))
         
         if not files:
-            print(f"❌ 처리할 파일이 없습니다. (확장자: {', '.join(extensions)})")
+            print(f"❌ 처리할 파일이 없습니다. (확장자: {', '.join(FILE_EXTENSIONS)})")
             return
         
         print(f"📁 발견된 파일: {len(files)}개\n")
