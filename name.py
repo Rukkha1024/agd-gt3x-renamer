@@ -39,15 +39,24 @@ class ActiGraphRenamer:
     def load_data(self, year: int):
         """Excel 파일에서 데이터 로드"""
         print("📂 데이터 로드 중...")
-        
+
         # 관리번호-시리얼번호 매칭 데이터
         serial_path = self.config['paths']['serial_mapping']
         self.serial_mapping_df = pd.read_excel(serial_path)
         print(f"  ✓ 관리번호-시리얼번호 매칭: {len(self.serial_mapping_df)} 건")
-        
+
         # 대상자 정보 데이터 (연도별 시트)
         subject_path = self.config['paths']['subject_info']
         self.subject_info_df = pd.read_excel(subject_path, sheet_name=str(year))
+
+        # 첫 번째 행 제거 (중복 헤더 행)
+        if len(self.subject_info_df) > 0 and pd.isna(self.subject_info_df.iloc[0]['관리번호']):
+            self.subject_info_df = self.subject_info_df.iloc[1:].reset_index(drop=True)
+
+        # 구분 컬럼 forward-fill (Excel의 병합된 셀 처리)
+        col_div = self.config['columns']['subject_info']['division']
+        self.subject_info_df[col_div] = self.subject_info_df[col_div].ffill()
+
         print(f"  ✓ 대상자 정보 ({year}년): {len(self.subject_info_df)} 건")
         
     def extract_serial_from_filename(self, filename: str) -> Optional[str]:

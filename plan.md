@@ -3,7 +3,7 @@
 </purpose>
 
 <request>
-Progress 04 구현
+Progress 05 구현
 </request>
 
 <rule>
@@ -19,8 +19,17 @@ Progress 04 구현
    - 메타데이터 변환 규칙 정의 완료
    - name.py + modify.py 통합 워크플로우 설계 완료
    - 상세 계획: progress/progress_03/progress_03.md
-4. ⏳ 3의 계획을 파이썬코드로 작성 (Progress 04 대기)
-5. ⏳ <original> 파일에 대해서 만들어둔 파이썬 script로 <file rename>과 meta information까지 수정 (Progress 05 대기)
+4. ✅ 3의 계획을 파이썬코드로 작성 (Progress 04 완료)
+   - name.py에 메타데이터 추출 및 수정 기능 통합 완료
+   - config.yaml에 메타데이터 컬럼 매핑 추가 완료
+   - 테스트 성공: 메타데이터 + 파일명 일괄 변경 검증 완료
+   - 상세 결과: progress/progress_04/progress_04.md
+5. ✅ <original> 파일에 대해서 만들어둔 파이썬 script로 <file rename>과 meta information까지 수정 (Progress 05 완료)
+   - Original 파일 처리 성공: 파일명 변경 + 메타데이터 수정 완료
+   - Excel 병합 셀 처리 버그 수정 (name.py)
+   - 9개 메타데이터 필드 검증 성공 (.agd, .gt3x)
+   - 실제 사용 가능한 최종 결과물 완성
+   - 상세 결과: progress/progress_05/progress_05.md
 </working progress>
 
 <기타 참고 사항>
