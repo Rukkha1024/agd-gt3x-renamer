@@ -22,3 +22,4 @@ Always follow this procedure when performing tasks:
 - Always design code for high reusability and central control via `config.yaml`.
 - Whenever you see the same logic or configuration emerge in two or more places, refactor it into a `config.yaml` entry for the parameters.
 - Before introducing a new constant or parameter in code, first ask: “Should this live in `config.yaml` so it can be centrally managed?” If yes, add it to `config.yaml` and reference it from there.
+- when you handling `.agd`, `.gt3x` format file, read @.agd 수정 예시.md, @.gtx3 수정 예시.md, @agd, .gt3x 파일 수정 시 참고할 사항.md. 
