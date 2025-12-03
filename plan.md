@@ -3,7 +3,8 @@
 </purpose>
 
 <request>
-do progress number 2. 
+Progress 03 완료!
+다음: Progress 04 구현
 </request>
 
 <rule>
@@ -12,12 +13,15 @@ do progress number 2.
 </rule>
 
 <working progress>
-1. meta information이 다른점을 찾기 between <modified> and <original>
-2. 다른점을 찾은 후, <original> 파일을 파이썬으로 수정해 <modified>와 동일하게 만들기. # 동일하게 만들어졌는지 사용자의 컨펌이 필요. 
-3. 동일하게 만들어졌다면, "Archive/대상자 키,체중,주손 정보.xlsx" 파일을 통해서 외부데이터의 정보를 통해서 <original> 파일들을 <modified>로 바꾸는 방법에 대해서 계획 작성. "Archive/대상자 키,체중,주손 정보.xlsx" 파일을 통해서 .agd, .gt3x 파일과 어떻게 매칭할 수 있는지는 <file rename> 참조할 것. 
-   1. `이름 == "조민석"` 을 대상으로 하면 됨. 
-4. 3의 계획을 파이썬코드로 작성. 
-5. <original> 파일에 대해서 만들어둔 파이썬 script로 <file rename>과 meta information까지 수정. 
+1. ✅ meta information이 다른점을 찾기 between <modified> and <original> (Progress 01 완료)
+2. ✅ 다른점을 찾은 후, <original> 파일을 파이썬으로 수정해 <modified>와 동일하게 만들기 (Progress 02 완료)
+3. ✅ Excel 데이터를 통해 파일을 수정하는 방법에 대한 계획 작성 (Progress 03 완료)
+   - Excel 데이터 매칭 전략 설계 완료
+   - 메타데이터 변환 규칙 정의 완료
+   - name.py + modify.py 통합 워크플로우 설계 완료
+   - 상세 계획: progress/progress_03/progress_03.md
+4. ⏳ 3의 계획을 파이썬코드로 작성 (Progress 04 대기)
+5. ⏳ <original> 파일에 대해서 만들어둔 파이썬 script로 <file rename>과 meta information까지 수정 (Progress 05 대기)
 </working progress>
 
 <기타 참고 사항>
