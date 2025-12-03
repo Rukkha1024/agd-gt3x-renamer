@@ -3,7 +3,7 @@
 </purpose>
 
 <request>
-do progress number 1. 
+do progress number 2. 
 </request>
 
 <rule>

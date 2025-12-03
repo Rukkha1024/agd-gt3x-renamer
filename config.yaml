@@ -34,3 +34,47 @@ file_extensions:
 # 기본 설정
 defaults:
   year: 2025
+
+# 메타데이터 수정 설정
+metadata:
+  # .agd 파일 필드명 (SQLite settings 테이블)
+  agd_fields:
+    subjectname: "subjectname"
+    sex: "sex"
+    height: "height"
+    mass: "mass"
+    age: "age"
+    dateOfBirth: "dateOfBirth"
+    side: "side"
+    dominance: "dominance"
+    limb: "limb"
+
+  # .gt3x 파일 필드명 (info.txt)
+  gt3x_fields:
+    subjectname: "Subject Name"
+    sex: "Sex"
+    height: "Height"
+    mass: "Mass"
+    age: "Age"
+    dateOfBirth: "DateOfBirth"
+    side: "Side"
+    dominance: "Dominance"
+    limb: "Limb"
+
+  # 성별 매핑
+  sex_mapping:
+    "남": "Male"
+    "여": "Female"
+
+  # 손잡이 매핑 (주손의 반대편 손목에 착용)
+  handedness_mapping:
+    "오":  # 오른손잡이 → 왼쪽 손목 착용
+      side: "Left"
+      dominance: "Dominant"
+    "왼":  # 왼손잡이 → 오른쪽 손목 착용
+      side: "Right"
+      dominance: "Non-Dominant"
+
+  # 기본값
+  defaults:
+    limb: "Waist"
