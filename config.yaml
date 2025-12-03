@@ -3,13 +3,13 @@
 # 파일 경로
 paths:
   # 대상자 정보 Excel 파일
-  subject_info: "/mnt/c/Users/ding0/대학원생_김종철/OneDrive - 청주대학교/질병관리청/대상자 키,체중,주손 정보.xlsx"
-  
+  subject_info: "/mnt/c/Users/Alice/OneDrive - 청주대학교/VScode_Repository/agd-gt3x-renamer/Archive/대상자 키,체중,주손 정보.xlsx"
+
   # 관리번호-시리얼번호 매칭 Excel 파일
-  serial_mapping: "/mnt/c/Users/ding0/OneDrive/문서/vscode repository/가속도계 파일 바꾸기/관리번호-시리얼번호.xlsx"
-  
+  serial_mapping: "/mnt/c/Users/Alice/OneDrive - 청주대학교/VScode_Repository/agd-gt3x-renamer/관리번호-시리얼번호.xlsx"
+
   # ActiGraph 파일이 저장된 디렉토리
-  target_directory: "/mnt/c/Users/ding0/OneDrive/문서/ActiGraph/ActiLife/Downloads"
+  target_directory: "/mnt/c/Users/Alice/OneDrive - 청주대학교/VScode_Repository/agd-gt3x-renamer/temp_test"
 
 # Excel 컬럼 설정
 columns:
@@ -25,6 +25,13 @@ columns:
     id: "ID"
     name: "이름"
     wear_start_date: "착용 시작일"
+    # 메타데이터 추가 컬럼 (Progress 04)
+    sex: "성별"
+    age: "나이"
+    height: "키"
+    mass: "체중"
+    date_of_birth: "생년월일"
+    handedness: "주손"
 
 # 처리 대상 파일 확장자
 file_extensions:

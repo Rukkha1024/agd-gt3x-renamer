@@ -3,8 +3,7 @@
 </purpose>
 
 <request>
-Progress 03 완료!
-다음: Progress 04 구현
+Progress 04 구현
 </request>
 
 <rule>
