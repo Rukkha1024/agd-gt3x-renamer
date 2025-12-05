@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__excel__excel_describe_sheets",
+      "mcp__excel__excel_read_sheet"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

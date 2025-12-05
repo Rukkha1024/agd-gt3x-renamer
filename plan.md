@@ -1,173 +1,61 @@
-# ActiGraph 파일 이름 자동 변경 프로젝트
+<purpose> 
+사용자는 accelermometer 장비의 데이터를 추출 시, actilife 프로그램 내에서 meta information을 수정하지 않고 .agd, .gt3x 파일의 정보를 파이썬으로 직접 수정하고자 한다. 
+</purpose>
 
-## 📁 참조 파일
+<request>
+Progress 05 구현
+</request>
 
-```yaml
-대상자_정보_파일: "C:\Users\ding0\대학원생_김종철\OneDrive - 청주대학교\질병관리청\대상자 키,체중,주손 정보.xlsx"
-  - 시트: 2024, 2025
-  - 컬럼: 구분, 관리번호, ID, 이름, 성별, 나이, 키, 체중, 생년월일, 주손, 지급일, 착용 시작일, 착용시작 요일
+<rule>
+- 현 codebase rule을 준수해라. 
+- 파이썬 코드를 만든다면, @name.py을 포함해서, 3개 이하로 만들어라. 
+</rule>
 
-관리번호_시리얼_매칭_파일: "C:\Users\ding0\OneDrive\문서\vscode repository\관리번호-시리얼번호.xlsx"
-  - 컬럼: 관리번호, 고유번호
+<working progress>
+1. meta information이 다른점을 찾기 between <modified> and <original> 
+2. 다른점을 찾은 후, <original> 파일을 파이썬으로 수정해 <modified>와 동일하게 만들기 
+3. Excel 데이터를 통해 파일을 수정하는 방법에 대한 계획 작성 
+   - Excel 데이터 매칭 전략 설계 완료
+   - 메타데이터 변환 규칙 정의 완료
+   - name.py + modify.py 통합 워크플로우 설계 완료
+   - 상세 계획: progress/progress_03/progress_03.md
+4. 3의 계획을 파이썬코드로 작성 
+   - name.py에 메타데이터 추출 및 수정 기능 통합 완료
+   - config.yaml에 메타데이터 컬럼 매핑 추가 완료
+   - 테스트 성공: 메타데이터 + 파일명 일괄 변경 검증 완료
+   - 상세 결과: progress/progress_04/progress_04.md
+5. <original> 파일에 대해서 만들어둔 파이썬 script로 <file rename>과 meta information까지 수정 
+   - Original 파일 처리 성공: 파일명 변경 + 메타데이터 수정 완료
+   - Excel 병합 셀 처리 버그 수정 (name.py)
+   - 9개 메타데이터 필드 검증 성공 (.agd, .gt3x)
+   - 실제 사용 가능한 최종 결과물 완성
+   - 상세 결과: progress/progress_05/progress_05.md
+</working progress>
 
-대상_디렉토리: "C:\Users\ding0\OneDrive\문서\ActiGraph\ActiLife\Downloads"
-```
+<기타 참고 사항>
+오른손잡이: 
+ - 엑셀: 주손 == '오' 
+ - .agd, .gt3x: side == 'Left' & Dominance =="Dominant"
+	
+왼손잡이: 
+ - 엑셀: 주손 == '왼'
+ - .agd, .gt3x: side == 'Right' & Dominance =="Non-Dominant"
+</기타 참고 사항>
 
----
 
-## 🔄 파일명 변경 로직
+<file rename>
+- name.py
+- config.yaml 
+</file rename>
 
-### 1. 기존 파일명 형식
-```
-고유번호 (날짜).확장자
-```
 
-**예시:**
-- `MOS2D36155148 (2025-11-13).gt3x`
-- `MOS2D36155148 (2025-11-13)60sec.agd`
-
-### 2. 변경 후 파일명 형식
-```
-ID_이름 (착용시작일).확장자
-```
-
-**예시:**
-- `JB54017302_김선옥 (2025-11-08).gt3x` ← 착용 시작일로 변경
-- `JB54017302_김선옥 (2025-11-08)60sec.agd` ← 착용 시작일로 변경
-
-**⚠️ 중요**: 날짜는 원본 파일의 날짜가 아닌 Excel의 "착용 시작일" 컬럼 값으로 자동 변경됨
-
----
-
-## ⚙️ 매칭 프로세스
-
-```
-1. 파일명에서 고유번호 추출
-   예: "MOS2D36155148 (2025-11-13).gt3x" → 고유번호: MOS2D36155148
-
-2. 관리번호-시리얼번호.xlsx에서 관리번호 찾기
-   고유번호: MOS2D36155148 → 관리번호: 105
-
-3. 대상자 키,체중,주손 정보.xlsx (연도별 시트)에서 매칭
-   - 조건1: 관리번호 = 105
-   - 조건2: 구분 = "40주차" (CLI 옵션으로 입력)
-   → 결과: ID=JB54017302, 이름=김선옥, 착용시작일=2025-11-08
-
-4. 새 파일명 생성 (날짜는 착용 시작일로 자동 변경)
-   JB54017302_김선옥 (2025-11-08).gt3x
-```
-
-### 추가 기능: 이미 변경된 파일의 날짜 자동 수정
-- 파일명이 이미 `ID_이름 (날짜).확장자` 형식으로 변경되어 있어도 날짜가 틀린 경우 자동으로 재변경
-- 예: `JB54011502_이희명 (2025-11-17)60sec.agd` → `JB54011502_이희명 (2025-11-06)60sec.agd`
-- ID로 역조회하여 올바른 착용 시작일로 수정
-
----
-
-## 🚨 핵심 문제 및 해결방안
-
-### 문제: 1:N 관계
-- 하나의 **관리번호**에 **여러 명의 대상자**가 매칭됨
-- 예: 관리번호 105 → 김보민, 홍민수, 오경은, 김선옥 (총 4명)
-
-### 해결: "구분" 컬럼으로 필터링
-- **구분** 컬럼: "1주차", "2주차", "40주차" 등의 값
-- **CLI 옵션**으로 구분 값을 입력받아 필터링
-
-**사용 예시:**
-```bash
-python name.py --week 40주차
-python name.py --week 40주차 --year 2025
-python name.py --week 40주차 --dry-run
-```
-
----
-
-## 📋 Python 스크립트 (name.py)
-
-### 기능
-1. CLI 옵션:
-   - `--week`: 구분 값 (필수, 예: "40주차")
-   - `--year`: 연도 (선택, 기본값: config.yaml의 defaults.year)
-   - `--dry-run`: 실제 변경 없이 미리보기
-   - `--config`: 설정 파일 경로 (선택, 기본값: config.yaml)
-
-2. 처리 대상 파일:
-   - `.gt3x` 파일
-   - `.agd` 파일
-
-3. 안전장치:
-   - 이미 올바르게 변경된 파일만 건너뛰기 (ID, 이름, 착용시작일 모두 일치)
-   - 날짜가 틀린 경우 자동으로 재변경
-   - 매칭 실패 시 로그 출력 및 건너뛰기
-   - dry-run 모드로 먼저 확인 가능
-
-4. 재사용성:
-   - config.yaml로 경로 및 설정 관리
-   - 단일 스크립트로 구현
-
-### 실행 환경
-- Conda 환경: `module`
-- 필요 패키지: pyyaml, pandas, openpyxl
-
----
-
-## ✅ 테스트 완료 케이스
-
-### 테스트 1: 원본 파일 변경 (2025-11-14)
-**파일:** `MOS2D36155148 (2025-11-13).gt3x`
-
-**매칭 결과:**
-```
-ID: JB54017302
-관리번호: 105
-구분: 40주차
-이름: 김선옥
-착용 시작일: 2025-11-08
-```
-
-**변경 완료:**
-- ✅ `JB54017302_김선옥 (2025-11-08).gt3x` ← 착용 시작일로 변경
-- ✅ `JB54017302_김선옥 (2025-11-08)60sec.agd` ← 착용 시작일로 변경
-
-### 테스트 2: 날짜 자동 수정 (2025-11-17)
-**기존 파일:**
-- `JB54011502_이희명 (2025-11-17)60sec.agd` ← 잘못된 날짜
-- `MOS2A50130068 (2025-11-17).gt3x`
-
-**매칭 결과:**
-```
-ID: JB54011502
-이름: 이희명
-착용 시작일: 2025-11-06
-```
-
-**변경 완료:**
-- ✅ `JB54011502_이희명 (2025-11-06)60sec.agd` ← 날짜 자동 수정
-- ✅ `JB54011502_이희명 (2025-11-06).gt3x` ← 올바른 날짜 적용
-
----
-
-### 최종 실행 결과 (2025-11-17)
-```
-실행 명령어: conda run -n module python name.py --week 40주차 --dry
-
-📊 처리 결과
-✅ 성공: 2개
-  - JB54011502_이희명 (2025-11-17)60sec.agd → JB54011502_이희명 (2025-11-06)60sec.agd
-  - MOS2A50130068 (2025-11-17).gt3x → JB54011502_이희명 (2025-11-06).gt3x
-⏭️  건너뜀: 0개
-❌ 실패: 0개
-```
-
-### 사용법
-```bash
-# 기본 사용 (2025년 기본값)
-conda run -n module python name.py --week 40주차
-
-# 미리보기 모드
-conda run -n module python name.py --week 40주차 --dry-run
-
-# 특정 연도 지정
-conda run -n module python name.py --week 1주차 --year 2024
-```
+<reference file>
+<modified>
+Archive/modified_MOS2A50130052 (2025-12-02)60sec.agd
+Archive/modified_MOS2A50130052 (2025-12-02)60sec.gt3x
+</modified>
+<original>
+Archive/original_MOS2A50130052 (2025-12-02)60sec.gt3x
+Archive/original_MOS2A50130052 (2025-12-02)60sec.agd
+</original>
+/reference file>

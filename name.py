@@ -14,6 +14,7 @@ conda run -n module python name.py --week 40주차 --dry
 """
 
 import argparse
+import datetime
 import os
 import re
 import sys
@@ -22,6 +23,8 @@ from typing import Dict, Optional, Tuple
 
 import pandas as pd
 import yaml
+
+from modify import ActiGraphModifier, FILE_EXTENSIONS
 
 
 class ActiGraphRenamer:
@@ -36,15 +39,24 @@ class ActiGraphRenamer:
     def load_data(self, year: int):
         """Excel 파일에서 데이터 로드"""
         print("📂 데이터 로드 중...")
-        
+
         # 관리번호-시리얼번호 매칭 데이터
         serial_path = self.config['paths']['serial_mapping']
         self.serial_mapping_df = pd.read_excel(serial_path)
         print(f"  ✓ 관리번호-시리얼번호 매칭: {len(self.serial_mapping_df)} 건")
-        
+
         # 대상자 정보 데이터 (연도별 시트)
         subject_path = self.config['paths']['subject_info']
         self.subject_info_df = pd.read_excel(subject_path, sheet_name=str(year))
+
+        # 첫 번째 행 제거 (중복 헤더 행)
+        if len(self.subject_info_df) > 0 and pd.isna(self.subject_info_df.iloc[0]['관리번호']):
+            self.subject_info_df = self.subject_info_df.iloc[1:].reset_index(drop=True)
+
+        # 구분 컬럼 forward-fill (Excel의 병합된 셀 처리)
+        col_div = self.config['columns']['subject_info']['division']
+        self.subject_info_df[col_div] = self.subject_info_df[col_div].ffill()
+
         print(f"  ✓ 대상자 정보 ({year}년): {len(self.subject_info_df)} 건")
         
     def extract_serial_from_filename(self, filename: str) -> Optional[str]:
@@ -116,7 +128,122 @@ class ActiGraphRenamer:
             return None
         
         return (subject_id, subject_name, wear_date_str)
-    
+
+    def parse_date_from_excel(self, date_value) -> Optional[datetime.datetime]:
+        """Excel 날짜 파싱 (MM-DD-YY 형식)
+
+        Args:
+            date_value: Excel 날짜 값 (pandas datetime 또는 문자열 "MM-DD-YY")
+
+        Returns:
+            datetime 객체 또는 None
+
+        Example:
+            "01-16-78" -> datetime(1978, 1, 16)
+            "02-22-03" -> datetime(2003, 2, 22)
+
+        Note:
+            YY < 50 -> 20YY (2000년대)
+            YY >= 50 -> 19YY (1900년대)
+        """
+        try:
+            # pandas Timestamp인 경우
+            if isinstance(date_value, pd.Timestamp):
+                return date_value.to_pydatetime()
+
+            # datetime인 경우
+            if isinstance(date_value, datetime.datetime):
+                return date_value
+
+            # 문자열인 경우 (MM-DD-YY)
+            date_str = str(date_value).strip()
+
+            # MM-DD-YY 형식 파싱
+            parts = date_str.split('-')
+            if len(parts) != 3:
+                print(f"  ⚠️  경고: 날짜 형식 오류 ({date_str}), MM-DD-YY 형식이어야 합니다")
+                return None
+
+            month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+
+            # 2자리 연도를 4자리로 변환
+            if year < 50:
+                year += 2000
+            else:
+                year += 1900
+
+            return datetime.datetime(year, month, day)
+
+        except Exception as e:
+            print(f"  ⚠️  경고: 날짜 파싱 실패 ({date_value}): {e}")
+            return None
+
+    def extract_metadata_from_subject_info(self, management_number: int, division: str) -> Optional[Dict]:
+        """Excel에서 메타데이터 추출
+
+        Args:
+            management_number: 관리번호
+            division: 구분 (예: "40주차")
+
+        Returns:
+            메타데이터 dict 또는 None
+            {
+                'subjectname': str,
+                'sex': str,  # "Male" or "Female"
+                'height': int,
+                'mass': int,
+                'age': int,
+                'dateOfBirth': datetime,
+                'hand': str,  # "오" or "왼"
+                'limb': str   # "Waist"
+            }
+        """
+        col_mgmt = self.config['columns']['subject_info']['management_number']
+        col_div = self.config['columns']['subject_info']['division']
+        col_name = self.config['columns']['subject_info']['name']
+        col_sex = self.config['columns']['subject_info']['sex']
+        col_age = self.config['columns']['subject_info']['age']
+        col_height = self.config['columns']['subject_info']['height']
+        col_mass = self.config['columns']['subject_info']['mass']
+        col_dob = self.config['columns']['subject_info']['date_of_birth']
+        col_hand = self.config['columns']['subject_info']['handedness']
+
+        # Excel에서 행 조회
+        result = self.subject_info_df[
+            (self.subject_info_df[col_mgmt] == management_number) &
+            (self.subject_info_df[col_div] == division)
+        ]
+
+        if len(result) == 0:
+            return None
+
+        row = result.iloc[0]
+
+        # 생년월일 파싱
+        dob = self.parse_date_from_excel(row[col_dob])
+        if dob is None:
+            print(f"  ⚠️  경고: 생년월일 파싱 실패 (관리번호: {management_number})")
+            return None
+
+        # 성별 매핑
+        sex_raw = str(row[col_sex]).strip()
+        sex_mapping = self.config['metadata']['sex_mapping']
+        sex = sex_mapping.get(sex_raw, sex_raw)
+
+        # 메타데이터 구성
+        metadata = {
+            'subjectname': str(row[col_name]),
+            'sex': sex,
+            'height': int(row[col_height]),
+            'mass': int(row[col_mass]),
+            'age': int(row[col_age]),
+            'dateOfBirth': dob,
+            'hand': str(row[col_hand]).strip(),
+            'limb': 'Waist'
+        }
+
+        return metadata
+
     def generate_new_filename(self, old_filename: str, subject_id: str, name: str, wear_date: str) -> str:
         """새 파일명 생성
         
@@ -139,9 +266,15 @@ class ActiGraphRenamer:
         
         return old_filename
     
-    def process_file(self, filepath: Path, division: str, dry_run: bool = False) -> Tuple[bool, str]:
+    def process_file(self, filepath: Path, division: str, dry_run: bool = False, modify_metadata: bool = True) -> Tuple[bool, str]:
         """단일 파일 처리
-        
+
+        Args:
+            filepath: 처리할 파일 경로
+            division: 구분 (예: "40주차")
+            dry_run: True이면 실제 변경 없이 미리보기만
+            modify_metadata: True이면 메타데이터도 수정, False이면 파일명만 변경
+
         Returns:
             (성공 여부, 메시지)
         """
@@ -197,28 +330,87 @@ class ActiGraphRenamer:
                 return False, "이미 올바르게 변경됨"
         
         new_filepath = filepath.parent / new_filename
-        
+
+        # 메타데이터 수정 (파일명 변경 전)
+        if modify_metadata and not dry_run:
+            # 메타데이터 추출
+            metadata = self.extract_metadata_from_subject_info(management_number, division)
+            if metadata is None:
+                return False, f"메타데이터 추출 실패 (관리번호: {management_number}, 구분: {division})"
+
+            try:
+                # ActiGraphModifier 초기화
+                modifier = ActiGraphModifier(self.config.get('config_path', 'config.yaml') if isinstance(self.config, dict) else 'config.yaml')
+
+                # .agd 또는 .gt3x 파일 메타데이터 수정
+                file_ext = filepath.suffix.lower()
+                if file_ext == '.agd':
+                    success = modifier.modify_agd_file(str(filepath), metadata)
+                    if not success:
+                        return False, f"메타데이터 수정 실패 (.agd): {filename}"
+                elif file_ext == '.gt3x':
+                    success = modifier.modify_gt3x_file(str(filepath), metadata)
+                    if not success:
+                        return False, f"메타데이터 수정 실패 (.gt3x): {filename}"
+
+                # 검증
+                expected = {
+                    'subjectname': metadata['subjectname'],
+                    'sex': metadata['sex'],
+                    'height': metadata['height'],
+                    'mass': metadata['mass'],
+                    'age': metadata['age'],
+                    'dateOfBirth': metadata['dateOfBirth'],
+                    'side': modifier.map_handedness(metadata['hand'])[0],
+                    'dominance': modifier.map_handedness(metadata['hand'])[1],
+                    'limb': metadata['limb']
+                }
+
+                if file_ext == '.agd':
+                    if not modifier.validate_agd_modification(str(filepath), expected):
+                        return False, f"메타데이터 검증 실패 (.agd): {filename}"
+                elif file_ext == '.gt3x':
+                    if not modifier.validate_gt3x_modification(str(filepath), expected):
+                        return False, f"메타데이터 검증 실패 (.gt3x): {filename}"
+
+            except Exception as e:
+                return False, f"메타데이터 수정 중 오류: {str(e)}"
+
         # 파일 변경
         if not dry_run:
             try:
                 filepath.rename(new_filepath)
-                return True, f"변경 완료: {filename} -> {new_filename}"
+                if modify_metadata:
+                    return True, f"변경 완료 (메타데이터 + 파일명): {filename} -> {new_filename}"
+                else:
+                    return True, f"변경 완료 (파일명만): {filename} -> {new_filename}"
             except Exception as e:
                 return False, f"파일 변경 실패: {str(e)}"
         else:
-            return True, f"[DRY-RUN] {filename} -> {new_filename}"
+            if modify_metadata:
+                return True, f"[DRY-RUN] 메타데이터 + 파일명: {filename} -> {new_filename}"
+            else:
+                return True, f"[DRY-RUN] 파일명만: {filename} -> {new_filename}"
     
-    def run(self, division: str, year: int = None, dry_run: bool = False):
-        """전체 프로세스 실행"""
+    def run(self, division: str, year: int = None, dry_run: bool = False, modify_metadata: bool = True):
+        """전체 프로세스 실행
+
+        Args:
+            division: 구분 (예: "40주차")
+            year: 연도 (기본값: config.yaml의 defaults.year)
+            dry_run: True이면 실제 변경 없이 미리보기만
+            modify_metadata: True이면 메타데이터도 수정, False이면 파일명만 변경
+        """
         if year is None:
             year = self.config['defaults']['year']
-        
+
         print(f"\n{'='*60}")
         print(f"ActiGraph 파일 자동 이름 변경")
         print(f"{'='*60}")
         print(f"📅 연도: {year}")
         print(f"📌 구분: {division}")
         print(f"🔍 모드: {'DRY-RUN (미리보기)' if dry_run else '실제 변경'}")
+        print(f"📝 메타데이터 수정: {'예' if modify_metadata else '아니오 (파일명만)'}")
         print(f"{'='*60}\n")
         
         # 데이터 로드
@@ -230,14 +422,13 @@ class ActiGraphRenamer:
             print(f"❌ 오류: 디렉토리를 찾을 수 없습니다: {target_dir}")
             return
         
-        # 처리 대상 파일 찾기
-        extensions = self.config['file_extensions']
+        # 처리 대상 파일 찾기 (상수 사용)
         files = []
-        for ext in extensions:
+        for ext in FILE_EXTENSIONS:
             files.extend(target_dir.glob(f"*{ext}"))
         
         if not files:
-            print(f"❌ 처리할 파일이 없습니다. (확장자: {', '.join(extensions)})")
+            print(f"❌ 처리할 파일이 없습니다. (확장자: {', '.join(FILE_EXTENSIONS)})")
             return
         
         print(f"📁 발견된 파일: {len(files)}개\n")
@@ -248,8 +439,8 @@ class ActiGraphRenamer:
         error_count = 0
         
         for filepath in sorted(files):
-            success, message = self.process_file(filepath, division, dry_run)
-            
+            success, message = self.process_file(filepath, division, dry_run, modify_metadata)
+
             if success:
                 print(f"✅ {message}")
                 success_count += 1
@@ -308,7 +499,13 @@ def main():
         action='store_true',
         help='실제 변경 없이 미리보기만 수행'
     )
-    
+
+    parser.add_argument(
+        '--no-metadata',
+        action='store_true',
+        help='메타데이터 수정 없이 파일명만 변경 (기본: 메타데이터도 수정)'
+    )
+
     parser.add_argument(
         '--config',
         default='config.yaml',
@@ -323,7 +520,8 @@ def main():
         renamer.run(
             division=args.week,
             year=args.year,
-            dry_run=args.dry
+            dry_run=args.dry,
+            modify_metadata=not args.no_metadata
         )
     except FileNotFoundError as e:
         print(f"❌ 오류: 파일을 찾을 수 없습니다: {e}")

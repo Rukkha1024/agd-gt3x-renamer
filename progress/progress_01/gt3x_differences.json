@@ -1,0 +1,41 @@
+{
+  "info_txt": {
+    "Age": {
+      "modified": "26",
+      "original": "<NOT PRESENT>"
+    },
+    "Battery Voltage": {
+      "modified": "4.18",
+      "original": "4.17"
+    },
+    "DateOfBirth": {
+      "modified": "630770112000000000",
+      "original": "<NOT PRESENT>"
+    },
+    "Download Date": {
+      "modified": "639003130690000000",
+      "original": "639003126230000000"
+    },
+    "Height": {
+      "modified": "177",
+      "original": "<NOT PRESENT>"
+    },
+    "Last Sample Time": {
+      "modified": "639003130690000000",
+      "original": "639003126230000000"
+    },
+    "Mass": {
+      "modified": "70",
+      "original": "<NOT PRESENT>"
+    },
+    "Sex": {
+      "modified": "Male",
+      "original": "<NOT PRESENT>"
+    },
+    "Subject Name": {
+      "modified": "조민석",
+      "original": "AB16_05"
+    }
+  },
+  "metadata_json": {}
+}
